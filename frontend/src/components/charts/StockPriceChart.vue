@@ -3,7 +3,7 @@
     <div class="chart-header">
       <div>
         <h2>{{ symbol }} Price History</h2>
-        <p>OHLC candlestick chart with trading volume</p>
+        <p>OHLC candlestick chart with moving averages and trading volume</p>
       </div>
 
       <div class="period-buttons">
@@ -27,14 +27,13 @@
       {{ error }}
     </div>
 
-    <div v-if="!loading && !error && prices.length === 0" class="chart-message">
+    <div
+      v-if="!loading && !error && prices.length === 0"
+      class="chart-message"
+    >
       No historical market data available.
     </div>
 
-    <!--
-      Keep the chart containers mounted in the DOM.
-      Plotly needs these elements to exist before rendering.
-    -->
     <div class="chart-container">
       <div
         ref="priceChartElement"
@@ -93,6 +92,13 @@ const periods = [
   { label: "10Y", value: "10y" },
 ];
 
+
+/*
+ * =========================================================
+ * DATE RANGE
+ * =========================================================
+ */
+
 const getStartDate = (period) => {
   const today = new Date();
   const start = new Date(today);
@@ -120,12 +126,53 @@ const getEndDate = () => {
   return new Date().toISOString().split("T")[0];
 };
 
+
+/*
+ * =========================================================
+ * SIMPLE MOVING AVERAGE
+ * =========================================================
+ */
+
+const calculateSMA = (values, period) => {
+  return values.map((_, index) => {
+    /*
+     * We don't have enough historical observations
+     * to calculate the SMA yet.
+     */
+    if (index < period - 1) {
+      return null;
+    }
+
+    const window = values.slice(
+      index - period + 1,
+      index + 1
+    );
+
+    const sum = window.reduce(
+      (total, value) => total + value,
+      0
+    );
+
+    return sum / period;
+  });
+};
+
+
+/*
+ * =========================================================
+ * LOAD HISTORICAL DATA
+ * =========================================================
+ */
+
 const loadPrices = async () => {
   try {
     loading.value = true;
     error.value = "";
 
-    const startDate = getStartDate(selectedPeriod.value);
+    const startDate = getStartDate(
+      selectedPeriod.value
+    );
+
     const endDate = getEndDate();
 
     console.log(
@@ -141,16 +188,18 @@ const loadPrices = async () => {
       endDate
     );
 
-    console.log("Historical API response:", data);
-    console.log("Number of records:", data.length);
+    console.log(
+      "Historical API response:",
+      data
+    );
+
+    console.log(
+      "Number of records:",
+      data.length
+    );
 
     prices.value = data;
 
-    /*
-     * Wait for Vue to finish updating the component.
-     * The Plotly containers are always mounted, so they
-     * should now be available.
-     */
     await nextTick();
 
     renderCharts();
@@ -167,21 +216,44 @@ const loadPrices = async () => {
   }
 };
 
+
+/*
+ * =========================================================
+ * RENDER CHARTS
+ * =========================================================
+ */
+
 const renderCharts = async () => {
   if (!priceChartElement.value) {
-    console.error("Price chart container was not found.");
+    console.error(
+      "Price chart container was not found."
+    );
+
     return;
   }
 
   if (!volumeChartElement.value) {
-    console.error("Volume chart container was not found.");
+    console.error(
+      "Volume chart container was not found."
+    );
+
     return;
   }
 
   if (!prices.value.length) {
-    console.warn("No prices available for charts.");
+    console.warn(
+      "No prices available for charts."
+    );
+
     return;
   }
+
+
+  /*
+   * ---------------------------------------------------------
+   * PREPARE DATA
+   * ---------------------------------------------------------
+   */
 
   const dates = prices.value.map(
     (item) => item.date
@@ -207,15 +279,59 @@ const renderCharts = async () => {
     (item) => Number(item.volume)
   );
 
-  console.log(
-    "Rendering charts with",
-    prices.value.length,
-    "records."
+
+  /*
+   * ---------------------------------------------------------
+   * CALCULATE MOVING AVERAGES
+   * ---------------------------------------------------------
+   */
+
+  const sma20 = calculateSMA(
+    closePrices,
+    20
   );
+
+  const sma50 = calculateSMA(
+    closePrices,
+    50
+  );
+
+  const sma200 = calculateSMA(
+    closePrices,
+    200
+  );
+
+
+  console.log(
+    "Chart points:",
+    closePrices.length
+  );
+
+  console.log(
+    "SMA 20 points:",
+    sma20.filter(
+      (value) => value !== null
+    ).length
+  );
+
+  console.log(
+    "SMA 50 points:",
+    sma50.filter(
+      (value) => value !== null
+    ).length
+  );
+
+  console.log(
+    "SMA 200 points:",
+    sma200.filter(
+      (value) => value !== null
+    ).length
+  );
+
 
   /*
    * =========================================================
-   * CANDLESTICK CHART
+   * CANDLESTICK TRACE
    * =========================================================
    */
 
@@ -235,12 +351,16 @@ const renderCharts = async () => {
       line: {
         color: "#16a34a",
       },
+
+      fillcolor: "#16a34a",
     },
 
     decreasing: {
       line: {
         color: "#dc2626",
       },
+
+      fillcolor: "#dc2626",
     },
 
     hovertemplate:
@@ -252,17 +372,118 @@ const renderCharts = async () => {
       "<extra></extra>",
   };
 
+
+  /*
+   * =========================================================
+   * SMA 20
+   * =========================================================
+   */
+
+  const sma20Trace = {
+    x: dates,
+
+    y: sma20,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "SMA 20",
+
+    line: {
+      width: 1.5,
+      color: "#2563eb",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "SMA 20: $%{y:.2f}" +
+      "<extra></extra>",
+  };
+
+
+  /*
+   * =========================================================
+   * SMA 50
+   * =========================================================
+   */
+
+  const sma50Trace = {
+    x: dates,
+
+    y: sma50,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "SMA 50",
+
+    line: {
+      width: 1.5,
+      color: "#f59e0b",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "SMA 50: $%{y:.2f}" +
+      "<extra></extra>",
+  };
+
+
+  /*
+   * =========================================================
+   * SMA 200
+   * =========================================================
+   */
+
+  const sma200Trace = {
+    x: dates,
+
+    y: sma200,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "SMA 200",
+
+    line: {
+      width: 1.5,
+      color: "#7c3aed",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "SMA 200: $%{y:.2f}" +
+      "<extra></extra>",
+  };
+
+
+  /*
+   * =========================================================
+   * PRICE CHART LAYOUT
+   * =========================================================
+   */
+
   const priceLayout = {
     autosize: true,
 
     margin: {
       l: 70,
       r: 30,
-      t: 20,
+      t: 50,
       b: 20,
     },
 
     paper_bgcolor: "#ffffff",
+
     plot_bgcolor: "#ffffff",
 
     xaxis: {
@@ -289,12 +510,21 @@ const renderCharts = async () => {
 
     hovermode: "x unified",
 
-    showlegend: false,
+    showlegend: true,
+
+    legend: {
+      orientation: "h",
+
+      x: 0,
+
+      y: 1.05,
+    },
   };
+
 
   /*
    * =========================================================
-   * VOLUME CHART
+   * VOLUME COLORS
    * =========================================================
    */
 
@@ -309,6 +539,13 @@ const renderCharts = async () => {
         : "#dc2626";
     }
   );
+
+
+  /*
+   * =========================================================
+   * VOLUME TRACE
+   * =========================================================
+   */
 
   const volumeTrace = {
     x: dates,
@@ -329,6 +566,13 @@ const renderCharts = async () => {
       "<extra></extra>",
   };
 
+
+  /*
+   * =========================================================
+   * VOLUME CHART LAYOUT
+   * =========================================================
+   */
+
   const volumeLayout = {
     autosize: true,
 
@@ -340,6 +584,7 @@ const renderCharts = async () => {
     },
 
     paper_bgcolor: "#ffffff",
+
     plot_bgcolor: "#ffffff",
 
     xaxis: {
@@ -363,6 +608,13 @@ const renderCharts = async () => {
     showlegend: false,
   };
 
+
+  /*
+   * =========================================================
+   * PLOTLY CONFIG
+   * =========================================================
+   */
+
   const chartConfig = {
     responsive: true,
 
@@ -376,29 +628,41 @@ const renderCharts = async () => {
     ],
   };
 
-  try {
-    /*
-     * Use react instead of newPlot.
-     * This safely updates an existing Plotly chart
-     * when the user changes 1M / 3M / 1Y etc.
-     */
 
+  /*
+   * =========================================================
+   * RENDER
+   * =========================================================
+   */
+
+  try {
     await Plotly.react(
       priceChartElement.value,
-      [candlestickTrace],
+
+      [
+        candlestickTrace,
+        sma20Trace,
+        sma50Trace,
+        sma200Trace,
+      ],
+
       priceLayout,
+
       chartConfig
     );
 
     await Plotly.react(
       volumeChartElement.value,
+
       [volumeTrace],
+
       volumeLayout,
+
       chartConfig
     );
 
     console.log(
-      "Candlestick and volume charts rendered successfully."
+      "Candlestick, SMA and volume charts rendered successfully."
     );
   } catch (err) {
     console.error(
@@ -411,17 +675,36 @@ const renderCharts = async () => {
   }
 };
 
+
+/*
+ * =========================================================
+ * PERIOD SELECTION
+ * =========================================================
+ */
+
 const changePeriod = (period) => {
-  if (selectedPeriod.value === period) {
+  if (
+    selectedPeriod.value === period
+  ) {
     return;
   }
 
   selectedPeriod.value = period;
 };
 
-watch(selectedPeriod, () => {
-  loadPrices();
-});
+
+/*
+ * =========================================================
+ * WATCHERS
+ * =========================================================
+ */
+
+watch(
+  selectedPeriod,
+  () => {
+    loadPrices();
+  }
+);
 
 watch(
   () => props.stockId,
@@ -430,17 +713,28 @@ watch(
   }
 );
 
+
+/*
+ * =========================================================
+ * COMPONENT LIFECYCLE
+ * =========================================================
+ */
+
 onMounted(() => {
   loadPrices();
 });
 
 onBeforeUnmount(() => {
   if (priceChartElement.value) {
-    Plotly.purge(priceChartElement.value);
+    Plotly.purge(
+      priceChartElement.value
+    );
   }
 
   if (volumeChartElement.value) {
-    Plotly.purge(volumeChartElement.value);
+    Plotly.purge(
+      volumeChartElement.value
+    );
   }
 });
 </script>
@@ -448,45 +742,65 @@ onBeforeUnmount(() => {
 <style scoped>
 .chart-card {
   margin-top: 30px;
+
   background: white;
+
   border: 1px solid #e5e7eb;
+
   border-radius: 12px;
+
   overflow: hidden;
 }
 
 .chart-header {
   display: flex;
+
   justify-content: space-between;
+
   align-items: center;
+
   gap: 20px;
+
   padding: 22px;
+
   border-bottom: 1px solid #e5e7eb;
 }
 
 .chart-header h2 {
   margin: 0;
+
   font-size: 20px;
 }
 
 .chart-header p {
   margin: 6px 0 0;
+
   color: #6b7280;
+
   font-size: 14px;
 }
 
 .period-buttons {
   display: flex;
+
   gap: 6px;
+
   flex-wrap: wrap;
 }
 
 .period-buttons button {
   border: 1px solid #d1d5db;
+
   background: white;
+
   color: #374151;
+
   padding: 7px 11px;
+
   border-radius: 7px;
+
   cursor: pointer;
+
   font-size: 13px;
 }
 
@@ -496,40 +810,50 @@ onBeforeUnmount(() => {
 
 .period-buttons button.active {
   background: #111827;
+
   color: white;
+
   border-color: #111827;
 }
 
 .chart-container {
   width: 100%;
+
   padding: 10px;
+
   background: white;
 }
 
 .price-chart {
   width: 100%;
+
   height: 500px;
 }
 
 .volume-chart {
   width: 100%;
+
   height: 220px;
 }
 
 .chart-message {
   padding: 20px;
+
   text-align: center;
+
   color: #6b7280;
 }
 
 .chart-message.error {
   color: #b91c1c;
+
   background: #fef2f2;
 }
 
 @media (max-width: 800px) {
   .chart-header {
     align-items: flex-start;
+
     flex-direction: column;
   }
 
