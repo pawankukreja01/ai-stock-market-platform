@@ -6,7 +6,7 @@
 
         <p>
           OHLC candlestick chart with moving averages,
-          Bollinger Bands, volume, RSI, MACD and Stochastic
+          Bollinger Bands, volume, RSI, MACD, Stochastic and ATR
         </p>
       </div>
 
@@ -75,6 +75,11 @@
         ref="stochasticChartElement"
         class="stochastic-chart"
       ></div>
+
+      <div
+        ref="atrChartElement"
+        class="atr-chart"
+      ></div>
     </div>
   </section>
 </template>
@@ -119,6 +124,9 @@ const macdChartElement =
   ref(null);
 
 const stochasticChartElement =
+  ref(null);
+
+const atrChartElement =
   ref(null);
 
 const prices = ref([]);
@@ -629,6 +637,108 @@ const calculateStochastic = (
   };
 };
 
+const calculateATR = (
+  highValues,
+  lowValues,
+  closeValues,
+  period = 14
+) => {
+  const trueRanges =
+    new Array(
+      closeValues.length
+    ).fill(null);
+
+  const atr =
+    new Array(
+      closeValues.length
+    ).fill(null);
+
+  if (
+    closeValues.length === 0
+  ) {
+    return atr;
+  }
+
+  // First trading day:
+  // True Range = High - Low
+  trueRanges[0] =
+    highValues[0] -
+    lowValues[0];
+
+  // Calculate True Range
+  // for every following day.
+  for (
+    let i = 1;
+    i < closeValues.length;
+    i++
+  ) {
+    const highLow =
+      highValues[i] -
+      lowValues[i];
+
+    const highPreviousClose =
+      Math.abs(
+        highValues[i] -
+        closeValues[i - 1]
+      );
+
+    const lowPreviousClose =
+      Math.abs(
+        lowValues[i] -
+        closeValues[i - 1]
+      );
+
+    trueRanges[i] =
+      Math.max(
+        highLow,
+        highPreviousClose,
+        lowPreviousClose
+      );
+  }
+
+  // First ATR is the simple
+  // average of the first
+  // "period" True Range values.
+  if (
+    closeValues.length >= period
+  ) {
+    const firstWindow =
+      trueRanges.slice(
+        0,
+        period
+      );
+
+    const firstATR =
+      firstWindow.reduce(
+        (
+          total,
+          value
+        ) => total + value,
+        0
+      ) / period;
+
+    atr[period - 1] =
+      firstATR;
+
+    // Wilder-style smoothing
+    // for subsequent ATR values.
+    for (
+      let i = period;
+      i < closeValues.length;
+      i++
+    ) {
+      atr[i] =
+        (
+          atr[i - 1] *
+            (period - 1) +
+          trueRanges[i]
+        ) / period;
+    }
+  }
+
+  return atr;
+};
+
 const calculateMACD = (
   values
 ) => {
@@ -798,7 +908,8 @@ const renderCharts = async () => {
     !volumeChartElement.value ||
     !rsiChartElement.value ||
     !macdChartElement.value ||
-    !stochasticChartElement.value
+    !stochasticChartElement.value ||
+    !atrChartElement.value
   ) {
     console.error(
       "One or more chart containers were not found."
@@ -903,6 +1014,14 @@ const renderCharts = async () => {
       3
     );
 
+  const atr14 =
+    calculateATR(
+      highPrices,
+      lowPrices,
+      closePrices,
+      14
+    );
+
   const macd =
     calculateMACD(
       closePrices
@@ -949,6 +1068,14 @@ const renderCharts = async () => {
   console.log(
     "Stochastic %D points:",
     stochastic.percentD.filter(
+      (value) =>
+        value !== null
+    ).length
+  );
+
+  console.log(
+    "ATR 14 points:",
+    atr14.filter(
       (value) =>
         value !== null
     ).length
@@ -1725,6 +1852,72 @@ const renderCharts = async () => {
     ],
   };
 
+  const atrTrace = {
+    x: dates,
+
+    y: atr14,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "ATR 14",
+
+    line: {
+      width: 2,
+
+      color: "#7c3aed",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "ATR 14: %{y:.2f}" +
+      "<extra></extra>",
+  };
+
+  const atrLayout = {
+    autosize: true,
+
+    margin: {
+      l: 70,
+
+      r: 30,
+
+      t: 30,
+
+      b: 40,
+    },
+
+    paper_bgcolor:
+      "#ffffff",
+
+    plot_bgcolor:
+      "#ffffff",
+
+    xaxis: {
+      type: "date",
+
+      showgrid: true,
+    },
+
+    yaxis: {
+      title: "ATR",
+
+      showgrid: true,
+
+      fixedrange: false,
+
+      tickprefix: "$",
+    },
+
+    hovermode:
+      "x unified",
+
+    showlegend: false,
+  };
+
   const chartConfig = {
     responsive: true,
 
@@ -1814,8 +2007,18 @@ const renderCharts = async () => {
       chartConfig
     );
 
+    await Plotly.react(
+      atrChartElement.value,
+
+      [atrTrace],
+
+      atrLayout,
+
+      chartConfig
+    );
+
     console.log(
-      "Candlestick, SMA, Bollinger Bands, volume, RSI, MACD and Stochastic charts rendered successfully."
+      "Candlestick, SMA, Bollinger Bands, volume, RSI, MACD, Stochastic and ATR charts rendered successfully."
     );
   }
 
@@ -1900,6 +2103,14 @@ onBeforeUnmount(() => {
   ) {
     Plotly.purge(
       stochasticChartElement.value
+    );
+  }
+
+  if (
+    atrChartElement.value
+  ) {
+    Plotly.purge(
+      atrChartElement.value
     );
   }
 });
@@ -2020,6 +2231,12 @@ onBeforeUnmount(() => {
   height: 280px;
 }
 
+.atr-chart {
+  width: 100%;
+
+  height: 280px;
+}
+
 .chart-message {
   padding: 20px;
 
@@ -2058,6 +2275,10 @@ onBeforeUnmount(() => {
   }
 
   .stochastic-chart {
+    height: 240px;
+  }
+
+  .atr-chart {
     height: 240px;
   }
 }
