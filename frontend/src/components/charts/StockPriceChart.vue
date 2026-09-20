@@ -1,22 +1,14 @@
 <template>
   <section class="chart-card">
-    <!-- =====================================================
-         CHART HEADER
-         ===================================================== -->
-
     <div class="chart-header">
       <div>
         <h2>{{ symbol }} Price History</h2>
 
         <p>
           OHLC candlestick chart with moving averages,
-          trading volume, RSI and MACD
+          Bollinger Bands, trading volume, RSI and MACD
         </p>
       </div>
-
-      <!-- =====================================================
-           PERIOD BUTTONS
-           ===================================================== -->
 
       <div class="period-buttons">
         <button
@@ -33,11 +25,6 @@
       </div>
     </div>
 
-
-    <!-- =====================================================
-         LOADING
-         ===================================================== -->
-
     <div
       v-if="loading"
       class="chart-message"
@@ -45,22 +32,12 @@
       Loading market data...
     </div>
 
-
-    <!-- =====================================================
-         ERROR
-         ===================================================== -->
-
     <div
       v-if="error"
       class="chart-message error"
     >
       {{ error }}
     </div>
-
-
-    <!-- =====================================================
-         EMPTY STATE
-         ===================================================== -->
 
     <div
       v-if="
@@ -73,48 +50,29 @@
       No historical market data available.
     </div>
 
-
-    <!-- =====================================================
-         CHARTS
-         ===================================================== -->
-
     <div class="chart-container">
-
-      <!-- PRICE / CANDLESTICK CHART -->
-
       <div
         ref="priceChartElement"
         class="price-chart"
       ></div>
-
-
-      <!-- VOLUME CHART -->
 
       <div
         ref="volumeChartElement"
         class="volume-chart"
       ></div>
 
-
-      <!-- RSI CHART -->
-
       <div
         ref="rsiChartElement"
         class="rsi-chart"
       ></div>
 
-
-      <!-- MACD CHART -->
-
       <div
         ref="macdChartElement"
         class="macd-chart"
       ></div>
-
     </div>
   </section>
 </template>
-
 
 <script setup>
 import {
@@ -131,13 +89,6 @@ import {
   getHistoricalPrices,
 } from "../../services/api";
 
-
-/*
- * =========================================================
- * PROPS
- * =========================================================
- */
-
 const props = defineProps({
   stockId: {
     type: Number,
@@ -149,13 +100,6 @@ const props = defineProps({
     required: true,
   },
 });
-
-
-/*
- * =========================================================
- * CHART REFERENCES
- * =========================================================
- */
 
 const priceChartElement =
   ref(null);
@@ -169,13 +113,6 @@ const rsiChartElement =
 const macdChartElement =
   ref(null);
 
-
-/*
- * =========================================================
- * STATE
- * =========================================================
- */
-
 const prices = ref([]);
 
 const loading = ref(false);
@@ -184,13 +121,6 @@ const error = ref("");
 
 const selectedPeriod =
   ref("1y");
-
-
-/*
- * =========================================================
- * AVAILABLE PERIODS
- * =========================================================
- */
 
 const periods = [
   {
@@ -229,145 +159,100 @@ const periods = [
   },
 ];
 
-
-/*
- * =========================================================
- * DATE RANGE
- * =========================================================
- */
-
 const getStartDate = (
   period
 ) => {
-
   const today =
     new Date();
 
   const start =
     new Date(today);
 
-
   if (
     period === "1m"
   ) {
-
     start.setMonth(
       start.getMonth() - 1
     );
-
   }
 
   else if (
     period === "3m"
   ) {
-
     start.setMonth(
       start.getMonth() - 3
     );
-
   }
 
   else if (
     period === "6m"
   ) {
-
     start.setMonth(
       start.getMonth() - 6
     );
-
   }
 
   else if (
     period === "1y"
   ) {
-
     start.setFullYear(
       start.getFullYear() - 1
     );
-
   }
 
   else if (
     period === "3y"
   ) {
-
     start.setFullYear(
       start.getFullYear() - 3
     );
-
   }
 
   else if (
     period === "5y"
   ) {
-
     start.setFullYear(
       start.getFullYear() - 5
     );
-
   }
 
   else if (
     period === "10y"
   ) {
-
     start.setFullYear(
       start.getFullYear() - 10
     );
-
   }
-
 
   return start
     .toISOString()
     .split("T")[0];
 };
 
-
 const getEndDate = () => {
-
   return new Date()
     .toISOString()
     .split("T")[0];
-
 };
-
-
-/*
- * =========================================================
- * SIMPLE MOVING AVERAGE
- * =========================================================
- */
 
 const calculateSMA = (
   values,
   period
 ) => {
-
   return values.map(
     (_, index) => {
-
-      /*
-       * Not enough observations
-       * to calculate the SMA.
-       */
-
       if (
         index <
         period - 1
       ) {
-
         return null;
-
       }
-
 
       const window =
         values.slice(
           index - period + 1,
           index + 1
         );
-
 
       const sum =
         window.reduce(
@@ -378,94 +263,50 @@ const calculateSMA = (
           0
         );
 
-
       return sum / period;
-
     }
   );
-
 };
-
-
-/*
- * =========================================================
- * EXPONENTIAL MOVING AVERAGE
- * =========================================================
- */
 
 const calculateEMA = (
   values,
   period
 ) => {
-
   const ema =
     new Array(
       values.length
     ).fill(null);
 
-
-  /*
-   * Not enough observations.
-   */
-
   if (
     values.length < period
   ) {
-
     return ema;
-
   }
 
-
-  /*
-   * First EMA value is based
-   * on a simple moving average.
-   */
-
   let sum = 0;
-
 
   for (
     let i = 0;
     i < period;
     i++
   ) {
-
     sum += values[i];
-
   }
-
 
   let previousEMA =
     sum / period;
 
-
   ema[period - 1] =
     previousEMA;
 
-
-  /*
-   * EMA multiplier.
-   *
-   * Formula:
-   *
-   * 2 / (period + 1)
-   */
-
   const multiplier =
     2 / (period + 1);
-
-
-  /*
-   * Calculate remaining EMA values.
-   */
 
   for (
     let i = period;
     i < values.length;
     i++
   ) {
-
     const currentEMA =
       (
         values[i] -
@@ -474,94 +315,54 @@ const calculateEMA = (
         multiplier +
       previousEMA;
 
-
     ema[i] =
       currentEMA;
 
-
     previousEMA =
       currentEMA;
-
   }
 
-
   return ema;
-
 };
-
-
-/*
- * =========================================================
- * RSI CALCULATION
- * =========================================================
- *
- * Standard RSI period = 14
- *
- * Uses Wilder's smoothing method.
- * =========================================================
- */
 
 const calculateRSI = (
   values,
   period = 14
 ) => {
-
   const rsi =
     new Array(
       values.length
     ).fill(null);
 
-
   if (
     values.length <= period
   ) {
-
     return rsi;
-
   }
 
-
-  /*
-   * Initial gains and losses.
-   */
-
   let gains = 0;
-
   let losses = 0;
-
 
   for (
     let i = 1;
     i <= period;
     i++
   ) {
-
     const change =
       values[i] -
       values[i - 1];
 
-
     if (
       change > 0
     ) {
-
       gains += change;
-
     }
 
     else {
-
       losses +=
         Math.abs(change);
-
     }
-
   }
-
-
-  /*
-   * Initial averages.
-   */
 
   let averageGain =
     gains / period;
@@ -569,71 +370,46 @@ const calculateRSI = (
   let averageLoss =
     losses / period;
 
-
-  /*
-   * Calculate RSI value.
-   */
-
   const calculateRSIValue =
     () => {
-
       if (
         averageLoss === 0
       ) {
-
         return 100;
-
       }
-
 
       const relativeStrength =
         averageGain /
         averageLoss;
-
 
       return (
         100 -
         100 /
           (1 + relativeStrength)
       );
-
     };
-
-
-  /*
-   * First RSI value.
-   */
 
   rsi[period] =
     calculateRSIValue();
-
-
-  /*
-   * Wilder's smoothing.
-   */
 
   for (
     let i = period + 1;
     i < values.length;
     i++
   ) {
-
     const change =
       values[i] -
       values[i - 1];
-
 
     const gain =
       change > 0
         ? change
         : 0;
 
-
     const loss =
       change < 0
         ? Math.abs(change)
         : 0;
-
 
     averageGain =
       (
@@ -642,7 +418,6 @@ const calculateRSI = (
         gain
       ) / period;
 
-
     averageLoss =
       (
         averageLoss *
@@ -650,57 +425,105 @@ const calculateRSI = (
         loss
       ) / period;
 
-
     rsi[i] =
       calculateRSIValue();
-
   }
 
-
   return rsi;
-
 };
 
+const calculateBollingerBands = (
+  values,
+  period = 20,
+  standardDeviations = 2
+) => {
+  const middleBand =
+    new Array(
+      values.length
+    ).fill(null);
 
-/*
- * =========================================================
- * MACD CALCULATION
- * =========================================================
- *
- * Standard MACD:
- *
- * Fast EMA     = 12
- * Slow EMA     = 26
- * Signal EMA   = 9
- *
- * MACD Line:
- *
- * EMA 12 - EMA 26
- *
- * Histogram:
- *
- * MACD - Signal
- * =========================================================
- */
+  const upperBand =
+    new Array(
+      values.length
+    ).fill(null);
+
+  const lowerBand =
+    new Array(
+      values.length
+    ).fill(null);
+
+  for (
+    let i = period - 1;
+    i < values.length;
+    i++
+  ) {
+    const window =
+      values.slice(
+        i - period + 1,
+        i + 1
+      );
+
+    const mean =
+      window.reduce(
+        (
+          total,
+          value
+        ) => total + value,
+        0
+      ) / period;
+
+    const squaredDifferences =
+      window.map(
+        (value) =>
+          Math.pow(
+            value - mean,
+            2
+          )
+      );
+
+    const variance =
+      squaredDifferences.reduce(
+        (
+          total,
+          value
+        ) => total + value,
+        0
+      ) / period;
+
+    const standardDeviation =
+      Math.sqrt(
+        variance
+      );
+
+    middleBand[i] =
+      mean;
+
+    upperBand[i] =
+      mean +
+      standardDeviations *
+        standardDeviation;
+
+    lowerBand[i] =
+      mean -
+      standardDeviations *
+        standardDeviation;
+  }
+
+  return {
+    middleBand,
+    upperBand,
+    lowerBand,
+  };
+};
 
 const calculateMACD = (
   values
 ) => {
-
-  /*
-   * Calculate fast EMA.
-   */
-
   const ema12 =
     calculateEMA(
       values,
       12
     );
-
-
-  /*
-   * Calculate slow EMA.
-   */
 
   const ema26 =
     calculateEMA(
@@ -708,52 +531,27 @@ const calculateMACD = (
       26
     );
 
-
-  /*
-   * ---------------------------------------------------------
-   * MACD LINE
-   * ---------------------------------------------------------
-   */
-
   const macdLine =
     new Array(
       values.length
     ).fill(null);
-
 
   for (
     let i = 0;
     i < values.length;
     i++
   ) {
-
     if (
       ema12[i] === null ||
       ema26[i] === null
     ) {
-
       continue;
-
     }
-
 
     macdLine[i] =
       ema12[i] -
       ema26[i];
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * SIGNAL LINE
-   * ---------------------------------------------------------
-   *
-   * Signal = 9-period EMA of MACD.
-   *
-   * First we extract only valid
-   * MACD values.
-   */
 
   const validMacdValues =
     macdLine.filter(
@@ -761,23 +559,16 @@ const calculateMACD = (
         value !== null
     );
 
-
   const signalValues =
     calculateEMA(
       validMacdValues,
       9
     );
 
-
   const signalLine =
     new Array(
       values.length
     ).fill(null);
-
-
-  /*
-   * Find first valid MACD index.
-   */
 
   const firstMacdIndex =
     macdLine.findIndex(
@@ -785,98 +576,61 @@ const calculateMACD = (
         value !== null
     );
 
-
-  /*
-   * Map signal values back
-   * to original dates.
-   */
-
   for (
     let i = 0;
     i < signalValues.length;
     i++
   ) {
-
     const originalIndex =
       firstMacdIndex + i;
-
 
     signalLine[
       originalIndex
     ] =
       signalValues[i];
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * HISTOGRAM
-   * ---------------------------------------------------------
-   */
 
   const histogram =
     new Array(
       values.length
     ).fill(null);
 
-
   for (
     let i = 0;
     i < values.length;
     i++
   ) {
-
     if (
       macdLine[i] === null ||
       signalLine[i] === null
     ) {
-
       continue;
-
     }
-
 
     histogram[i] =
       macdLine[i] -
       signalLine[i];
-
   }
-
 
   return {
     macdLine,
     signalLine,
     histogram,
   };
-
 };
 
-
-/*
- * =========================================================
- * LOAD HISTORICAL DATA
- * =========================================================
- */
-
 const loadPrices = async () => {
-
   try {
-
     loading.value = true;
-
     error.value = "";
-
 
     const startDate =
       getStartDate(
         selectedPeriod.value
       );
 
-
     const endDate =
       getEndDate();
-
 
     console.log(
       `Loading ${props.symbol} data:`,
@@ -885,11 +639,6 @@ const loadPrices = async () => {
       endDate
     );
 
-
-    /*
-     * Request data from Django.
-     */
-
     const data =
       await getHistoricalPrices(
         props.stockId,
@@ -897,171 +646,90 @@ const loadPrices = async () => {
         endDate
       );
 
-
     console.log(
       "Historical API response:",
       data
     );
-
 
     console.log(
       "Number of records:",
       data.length
     );
 
-
     prices.value =
       data;
 
-
-    /*
-     * Wait for Vue DOM update.
-     */
-
     await nextTick();
 
-
     renderCharts();
-
   }
 
   catch (err) {
-
     console.error(
       "Historical market data loading failed:",
       err
     );
 
-
     error.value =
       "Unable to load historical market data.";
-
   }
 
   finally {
-
     loading.value = false;
-
   }
-
 };
 
-
-/*
- * =========================================================
- * RENDER CHARTS
- * =========================================================
- */
-
 const renderCharts = async () => {
-
-  /*
-   * ---------------------------------------------------------
-   * PRICE CHART CONTAINER
-   * ---------------------------------------------------------
-   */
-
   if (
     !priceChartElement.value
   ) {
-
     console.error(
       "Price chart container was not found."
     );
-
     return;
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * VOLUME CHART CONTAINER
-   * ---------------------------------------------------------
-   */
 
   if (
     !volumeChartElement.value
   ) {
-
     console.error(
       "Volume chart container was not found."
     );
-
     return;
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * RSI CHART CONTAINER
-   * ---------------------------------------------------------
-   */
 
   if (
     !rsiChartElement.value
   ) {
-
     console.error(
       "RSI chart container was not found."
     );
-
     return;
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * MACD CHART CONTAINER
-   * ---------------------------------------------------------
-   */
 
   if (
     !macdChartElement.value
   ) {
-
     console.error(
       "MACD chart container was not found."
     );
-
     return;
-
   }
-
-
-  /*
-   * ---------------------------------------------------------
-   * DATA CHECK
-   * ---------------------------------------------------------
-   */
 
   if (
     !prices.value.length
   ) {
-
     console.warn(
       "No prices available for charts."
     );
-
     return;
-
   }
-
-
-  /*
-   * =========================================================
-   * PREPARE DATA
-   * =========================================================
-   */
 
   const dates =
     prices.value.map(
       (item) =>
         item.date
     );
-
 
   const openPrices =
     prices.value.map(
@@ -1071,7 +739,6 @@ const renderCharts = async () => {
         )
     );
 
-
   const highPrices =
     prices.value.map(
       (item) =>
@@ -1079,7 +746,6 @@ const renderCharts = async () => {
           item.high_price
         )
     );
-
 
   const lowPrices =
     prices.value.map(
@@ -1089,7 +755,6 @@ const renderCharts = async () => {
         )
     );
 
-
   const closePrices =
     prices.value.map(
       (item) =>
@@ -1097,7 +762,6 @@ const renderCharts = async () => {
           item.close_price
         )
     );
-
 
   const volumes =
     prices.value.map(
@@ -1107,19 +771,11 @@ const renderCharts = async () => {
         )
     );
 
-
-  /*
-   * =========================================================
-   * SMA CALCULATIONS
-   * =========================================================
-   */
-
   const sma20 =
     calculateSMA(
       closePrices,
       20
     );
-
 
   const sma50 =
     calculateSMA(
@@ -1127,19 +783,18 @@ const renderCharts = async () => {
       50
     );
 
-
   const sma200 =
     calculateSMA(
       closePrices,
       200
     );
 
-
-  /*
-   * =========================================================
-   * RSI CALCULATION
-   * =========================================================
-   */
+  const bollinger =
+    calculateBollingerBands(
+      closePrices,
+      20,
+      2
+    );
 
   const rsi14 =
     calculateRSI(
@@ -1147,42 +802,24 @@ const renderCharts = async () => {
       14
     );
 
-
-  /*
-   * =========================================================
-   * MACD CALCULATION
-   * =========================================================
-   */
-
   const macd =
     calculateMACD(
       closePrices
     );
 
-
   const macdLine =
     macd.macdLine;
-
 
   const signalLine =
     macd.signalLine;
 
-
   const macdHistogram =
     macd.histogram;
-
-
-  /*
-   * =========================================================
-   * DEBUG INFORMATION
-   * =========================================================
-   */
 
   console.log(
     "Chart points:",
     closePrices.length
   );
-
 
   console.log(
     "SMA 20 points:",
@@ -1192,7 +829,6 @@ const renderCharts = async () => {
     ).length
   );
 
-
   console.log(
     "SMA 50 points:",
     sma50.filter(
@@ -1200,7 +836,6 @@ const renderCharts = async () => {
         value !== null
     ).length
   );
-
 
   console.log(
     "SMA 200 points:",
@@ -1210,6 +845,13 @@ const renderCharts = async () => {
     ).length
   );
 
+  console.log(
+    "Bollinger Band points:",
+    bollinger.middleBand.filter(
+      (value) =>
+        value !== null
+    ).length
+  );
 
   console.log(
     "RSI 14 points:",
@@ -1219,7 +861,6 @@ const renderCharts = async () => {
     ).length
   );
 
-
   console.log(
     "MACD points:",
     macdLine.filter(
@@ -1228,15 +869,7 @@ const renderCharts = async () => {
     ).length
   );
 
-
-  /*
-   * =========================================================
-   * CANDLESTICK TRACE
-   * =========================================================
-   */
-
   const candlestickTrace = {
-
     x: dates,
 
     open: openPrices,
@@ -1251,28 +884,21 @@ const renderCharts = async () => {
 
     name: props.symbol,
 
-
     increasing: {
-
       line: {
         color: "#16a34a",
       },
 
       fillcolor: "#16a34a",
-
     },
 
-
     decreasing: {
-
       line: {
         color: "#dc2626",
       },
 
       fillcolor: "#dc2626",
-
     },
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
@@ -1281,18 +907,9 @@ const renderCharts = async () => {
       "Low: $%{low:.2f}<br>" +
       "Close: $%{close:.2f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * SMA 20 TRACE
-   * =========================================================
-   */
-
   const sma20Trace = {
-
     x: dates,
 
     y: sma20,
@@ -1303,35 +920,21 @@ const renderCharts = async () => {
 
     name: "SMA 20",
 
-
     line: {
-
       width: 1.5,
 
       color: "#2563eb",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "SMA 20: $%{y:.2f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * SMA 50 TRACE
-   * =========================================================
-   */
-
   const sma50Trace = {
-
     x: dates,
 
     y: sma50,
@@ -1342,35 +945,21 @@ const renderCharts = async () => {
 
     name: "SMA 50",
 
-
     line: {
-
       width: 1.5,
 
       color: "#f59e0b",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "SMA 50: $%{y:.2f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * SMA 200 TRACE
-   * =========================================================
-   */
-
   const sma200Trace = {
-
     x: dates,
 
     y: sma200,
@@ -1381,40 +970,104 @@ const renderCharts = async () => {
 
     name: "SMA 200",
 
-
     line: {
-
       width: 1.5,
 
       color: "#7c3aed",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "SMA 200: $%{y:.2f}" +
       "<extra></extra>",
-
   };
 
+  const bollingerUpperTrace = {
+    x: dates,
 
-  /*
-   * =========================================================
-   * PRICE CHART LAYOUT
-   * =========================================================
-   */
+    y: bollinger.upperBand,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "BB Upper",
+
+    line: {
+      width: 1.2,
+
+      color: "#6b7280",
+
+      dash: "dot",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "BB Upper: $%{y:.2f}" +
+      "<extra></extra>",
+  };
+
+  const bollingerMiddleTrace = {
+    x: dates,
+
+    y: bollinger.middleBand,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "BB Middle",
+
+    line: {
+      width: 1.2,
+
+      color: "#111827",
+
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "BB Middle: $%{y:.2f}" +
+      "<extra></extra>",
+  };
+
+  const bollingerLowerTrace = {
+    x: dates,
+
+    y: bollinger.lowerBand,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "BB Lower",
+
+    line: {
+      width: 1.2,
+
+      color: "#6b7280",
+
+      dash: "dot",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "BB Lower: $%{y:.2f}" +
+      "<extra></extra>",
+  };
 
   const priceLayout = {
-
     autosize: true,
 
-
     margin: {
-
       l: 70,
 
       r: 30,
@@ -1422,9 +1075,7 @@ const renderCharts = async () => {
       t: 50,
 
       b: 20,
-
     },
-
 
     paper_bgcolor:
       "#ffffff",
@@ -1432,27 +1083,19 @@ const renderCharts = async () => {
     plot_bgcolor:
       "#ffffff",
 
-
     xaxis: {
-
       type: "date",
 
       showgrid: true,
 
       showticklabels: false,
 
-
       rangeslider: {
-
         visible: false,
-
       },
-
     },
 
-
     yaxis: {
-
       title:
         "Price (USD)",
 
@@ -1461,70 +1104,41 @@ const renderCharts = async () => {
       showgrid: true,
 
       fixedrange: false,
-
     },
-
 
     hovermode:
       "x unified",
 
-
     showlegend: true,
 
-
     legend: {
-
       orientation: "h",
 
       x: 0,
 
       y: 1.05,
-
     },
-
   };
-
-
-  /*
-   * =========================================================
-   * VOLUME COLORS
-   * =========================================================
-   */
 
   const volumeColors =
     closePrices.map(
       (close, index) => {
-
         if (
           index === 0
         ) {
-
           return "#9ca3af";
-
         }
-
 
         return close >=
           closePrices[
             index - 1
           ]
-
           ? "#16a34a"
-
           : "#dc2626";
-
       }
     );
 
-
-  /*
-   * =========================================================
-   * VOLUME TRACE
-   * =========================================================
-   */
-
   const volumeTrace = {
-
     x: dates,
 
     y: volumes,
@@ -1533,36 +1147,21 @@ const renderCharts = async () => {
 
     name: "Volume",
 
-
     marker: {
-
       color:
         volumeColors,
-
     },
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "Volume: %{y:,}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * VOLUME LAYOUT
-   * =========================================================
-   */
-
   const volumeLayout = {
-
     autosize: true,
 
-
     margin: {
-
       l: 70,
 
       r: 30,
@@ -1570,9 +1169,7 @@ const renderCharts = async () => {
       t: 5,
 
       b: 50,
-
     },
-
 
     paper_bgcolor:
       "#ffffff",
@@ -1580,47 +1177,28 @@ const renderCharts = async () => {
     plot_bgcolor:
       "#ffffff",
 
-
     xaxis: {
-
       type: "date",
 
       showgrid: true,
 
-
       rangeslider: {
-
         visible: true,
-
       },
-
     },
 
-
     yaxis: {
-
       title: "Volume",
 
       showgrid: true,
 
       tickformat: "~s",
-
     },
 
-
     showlegend: false,
-
   };
 
-
-  /*
-   * =========================================================
-   * RSI TRACE
-   * =========================================================
-   */
-
   const rsiTrace = {
-
     x: dates,
 
     y: rsi14,
@@ -1631,40 +1209,24 @@ const renderCharts = async () => {
 
     name: "RSI 14",
 
-
     line: {
-
       width: 2,
 
       color: "#2563eb",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "RSI 14: %{y:.2f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * RSI LAYOUT
-   * =========================================================
-   */
-
   const rsiLayout = {
-
     autosize: true,
 
-
     margin: {
-
       l: 70,
 
       r: 30,
@@ -1672,9 +1234,7 @@ const renderCharts = async () => {
       t: 30,
 
       b: 40,
-
     },
-
 
     paper_bgcolor:
       "#ffffff",
@@ -1682,18 +1242,13 @@ const renderCharts = async () => {
     plot_bgcolor:
       "#ffffff",
 
-
     xaxis: {
-
       type: "date",
 
       showgrid: true,
-
     },
 
-
     yaxis: {
-
       title: "RSI",
 
       range: [0, 100],
@@ -1701,25 +1256,15 @@ const renderCharts = async () => {
       showgrid: true,
 
       fixedrange: false,
-
     },
-
 
     hovermode:
       "x unified",
 
-
     showlegend: false,
 
-
     shapes: [
-
-      /*
-       * 70 level
-       */
-
       {
-
         type: "line",
 
         xref: "paper",
@@ -1732,26 +1277,16 @@ const renderCharts = async () => {
 
         y1: 70,
 
-
         line: {
-
           width: 1,
 
           dash: "dash",
 
           color: "#dc2626",
-
         },
-
       },
 
-
-      /*
-       * 30 level
-       */
-
       {
-
         type: "line",
 
         xref: "paper",
@@ -1764,26 +1299,16 @@ const renderCharts = async () => {
 
         y1: 30,
 
-
         line: {
-
           width: 1,
 
           dash: "dash",
 
           color: "#16a34a",
-
         },
-
       },
 
-
-      /*
-       * 50 level
-       */
-
       {
-
         type: "line",
 
         xref: "paper",
@@ -1796,32 +1321,18 @@ const renderCharts = async () => {
 
         y1: 50,
 
-
         line: {
-
           width: 1,
 
           dash: "dot",
 
           color: "#9ca3af",
-
         },
-
       },
-
     ],
-
   };
 
-
-  /*
-   * =========================================================
-   * MACD LINE TRACE
-   * =========================================================
-   */
-
   const macdLineTrace = {
-
     x: dates,
 
     y: macdLine,
@@ -1832,35 +1343,21 @@ const renderCharts = async () => {
 
     name: "MACD",
 
-
     line: {
-
       width: 2,
 
       color: "#2563eb",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "MACD: %{y:.4f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * MACD SIGNAL LINE TRACE
-   * =========================================================
-   */
-
   const signalLineTrace = {
-
     x: dates,
 
     y: signalLine,
@@ -1871,64 +1368,36 @@ const renderCharts = async () => {
 
     name: "Signal",
 
-
     line: {
-
       width: 2,
 
       color: "#f59e0b",
-
     },
 
-
     connectgaps: false,
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "Signal: %{y:.4f}" +
       "<extra></extra>",
-
   };
-
-
-  /*
-   * =========================================================
-   * MACD HISTOGRAM COLORS
-   * =========================================================
-   */
 
   const macdHistogramColors =
     macdHistogram.map(
       (value) => {
-
         if (
           value === null
         ) {
-
           return "#9ca3af";
-
         }
 
-
         return value >= 0
-
           ? "#16a34a"
-
           : "#dc2626";
-
       }
     );
 
-
-  /*
-   * =========================================================
-   * MACD HISTOGRAM TRACE
-   * =========================================================
-   */
-
   const macdHistogramTrace = {
-
     x: dates,
 
     y: macdHistogram,
@@ -1937,36 +1406,21 @@ const renderCharts = async () => {
 
     name: "Histogram",
 
-
     marker: {
-
       color:
         macdHistogramColors,
-
     },
-
 
     hovertemplate:
       "<b>%{x}</b><br>" +
       "Histogram: %{y:.4f}" +
       "<extra></extra>",
-
   };
 
-
-  /*
-   * =========================================================
-   * MACD LAYOUT
-   * =========================================================
-   */
-
   const macdLayout = {
-
     autosize: true,
 
-
     margin: {
-
       l: 70,
 
       r: 30,
@@ -1974,9 +1428,7 @@ const renderCharts = async () => {
       t: 30,
 
       b: 40,
-
     },
-
 
     paper_bgcolor:
       "#ffffff",
@@ -1984,53 +1436,35 @@ const renderCharts = async () => {
     plot_bgcolor:
       "#ffffff",
 
-
     xaxis: {
-
       type: "date",
 
       showgrid: true,
-
     },
 
-
     yaxis: {
-
       title: "MACD",
 
       showgrid: true,
 
       fixedrange: false,
-
     },
-
 
     hovermode:
       "x unified",
 
-
     showlegend: true,
 
-
     legend: {
-
       orientation: "h",
 
       x: 0,
 
       y: 1.05,
-
     },
 
-
-    /*
-     * Zero reference line.
-     */
-
     shapes: [
-
       {
-
         type: "line",
 
         xref: "paper",
@@ -2043,89 +1477,57 @@ const renderCharts = async () => {
 
         y1: 0,
 
-
         line: {
-
           width: 1,
 
           dash: "dot",
 
           color: "#6b7280",
-
         },
-
       },
-
     ],
-
   };
 
-
-  /*
-   * =========================================================
-   * PLOTLY CONFIG
-   * =========================================================
-   */
-
   const chartConfig = {
-
     responsive: true,
 
     displaylogo: false,
 
     scrollZoom: true,
 
-
     modeBarButtonsToRemove: [
-
       "lasso2d",
 
       "select2d",
-
     ],
-
   };
 
-
-  /*
-   * =========================================================
-   * RENDER PRICE CHART
-   * =========================================================
-   */
-
   try {
-
     await Plotly.react(
-
       priceChartElement.value,
 
       [
-
         candlestickTrace,
+
+        bollingerLowerTrace,
+
+        bollingerUpperTrace,
+
+        bollingerMiddleTrace,
 
         sma20Trace,
 
         sma50Trace,
 
         sma200Trace,
-
       ],
 
       priceLayout,
 
       chartConfig
-
     );
 
-
-    /*
-     * =======================================================
-     * RENDER VOLUME CHART
-     * =======================================================
-     */
-
     await Plotly.react(
-
       volumeChartElement.value,
 
       [volumeTrace],
@@ -2133,18 +1535,9 @@ const renderCharts = async () => {
       volumeLayout,
 
       chartConfig
-
     );
 
-
-    /*
-     * =======================================================
-     * RENDER RSI CHART
-     * =======================================================
-     */
-
     await Plotly.react(
-
       rsiChartElement.value,
 
       [rsiTrace],
@@ -2152,208 +1545,108 @@ const renderCharts = async () => {
       rsiLayout,
 
       chartConfig
-
     );
 
-
-    /*
-     * =======================================================
-     * RENDER MACD CHART
-     * =======================================================
-     */
-
     await Plotly.react(
-
       macdChartElement.value,
 
       [
-
         macdHistogramTrace,
 
         macdLineTrace,
 
         signalLineTrace,
-
       ],
 
       macdLayout,
 
       chartConfig
-
     );
-
 
     console.log(
-      "Candlestick, SMA, volume, RSI and MACD charts rendered successfully."
+      "Candlestick, SMA, Bollinger Bands, volume, RSI and MACD charts rendered successfully."
     );
-
   }
 
   catch (err) {
-
     console.error(
       "Plotly chart rendering failed:",
       err
     );
 
-
     error.value =
       "The market data loaded, but the charts could not be rendered.";
-
   }
-
 };
-
-
-/*
- * =========================================================
- * PERIOD SELECTION
- * =========================================================
- */
 
 const changePeriod = (
   period
 ) => {
-
   if (
     selectedPeriod.value ===
     period
   ) {
-
     return;
-
   }
-
 
   selectedPeriod.value =
     period;
-
 };
-
-
-/*
- * =========================================================
- * WATCH PERIOD
- * =========================================================
- */
 
 watch(
   selectedPeriod,
   () => {
-
     loadPrices();
-
   }
 );
-
-
-/*
- * =========================================================
- * WATCH STOCK
- * =========================================================
- */
 
 watch(
   () => props.stockId,
   () => {
-
     loadPrices();
-
   }
 );
 
-
-/*
- * =========================================================
- * COMPONENT MOUNT
- * =========================================================
- */
-
 onMounted(() => {
-
   loadPrices();
-
 });
 
-
-/*
- * =========================================================
- * COMPONENT UNMOUNT
- * =========================================================
- */
-
 onBeforeUnmount(() => {
-
-  /*
-   * Destroy price chart.
-   */
-
   if (
     priceChartElement.value
   ) {
-
     Plotly.purge(
       priceChartElement.value
     );
-
   }
-
-
-  /*
-   * Destroy volume chart.
-   */
 
   if (
     volumeChartElement.value
   ) {
-
     Plotly.purge(
       volumeChartElement.value
     );
-
   }
-
-
-  /*
-   * Destroy RSI chart.
-   */
 
   if (
     rsiChartElement.value
   ) {
-
     Plotly.purge(
       rsiChartElement.value
     );
-
   }
-
-
-  /*
-   * Destroy MACD chart.
-   */
 
   if (
     macdChartElement.value
   ) {
-
     Plotly.purge(
       macdChartElement.value
     );
-
   }
-
 });
 </script>
 
-
 <style scoped>
-/*
- * =========================================================
- * MAIN CHART CARD
- * =========================================================
- */
-
 .chart-card {
   margin-top: 30px;
 
@@ -2365,13 +1658,6 @@ onBeforeUnmount(() => {
 
   overflow: hidden;
 }
-
-
-/*
- * =========================================================
- * HEADER
- * =========================================================
- */
 
 .chart-header {
   display: flex;
@@ -2387,13 +1673,11 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #e5e7eb;
 }
 
-
 .chart-header h2 {
   margin: 0;
 
   font-size: 20px;
 }
-
 
 .chart-header p {
   margin: 6px 0 0;
@@ -2403,13 +1687,6 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
-
-/*
- * =========================================================
- * PERIOD BUTTONS
- * =========================================================
- */
-
 .period-buttons {
   display: flex;
 
@@ -2417,7 +1694,6 @@ onBeforeUnmount(() => {
 
   flex-wrap: wrap;
 }
-
 
 .period-buttons button {
   border: 1px solid #d1d5db;
@@ -2435,11 +1711,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-
 .period-buttons button:hover {
   background: #f3f4f6;
 }
-
 
 .period-buttons button.active {
   background: #111827;
@@ -2449,13 +1723,6 @@ onBeforeUnmount(() => {
   border-color: #111827;
 }
 
-
-/*
- * =========================================================
- * CHART CONTAINER
- * =========================================================
- */
-
 .chart-container {
   width: 100%;
 
@@ -2464,25 +1731,11 @@ onBeforeUnmount(() => {
   background: white;
 }
 
-
-/*
- * =========================================================
- * PRICE CHART
- * =========================================================
- */
-
 .price-chart {
   width: 100%;
 
   height: 500px;
 }
-
-
-/*
- * =========================================================
- * VOLUME CHART
- * =========================================================
- */
 
 .volume-chart {
   width: 100%;
@@ -2490,38 +1743,17 @@ onBeforeUnmount(() => {
   height: 220px;
 }
 
-
-/*
- * =========================================================
- * RSI CHART
- * =========================================================
- */
-
 .rsi-chart {
   width: 100%;
 
   height: 260px;
 }
 
-
-/*
- * =========================================================
- * MACD CHART
- * =========================================================
- */
-
 .macd-chart {
   width: 100%;
 
   height: 280px;
 }
-
-
-/*
- * =========================================================
- * MESSAGES
- * =========================================================
- */
 
 .chart-message {
   padding: 20px;
@@ -2531,47 +1763,33 @@ onBeforeUnmount(() => {
   color: #6b7280;
 }
 
-
 .chart-message.error {
   color: #b91c1c;
 
   background: #fef2f2;
 }
 
-
-/*
- * =========================================================
- * MOBILE
- * =========================================================
- */
-
 @media (max-width: 800px) {
-
   .chart-header {
     align-items: flex-start;
 
     flex-direction: column;
   }
 
-
   .price-chart {
     height: 400px;
   }
-
 
   .volume-chart {
     height: 180px;
   }
 
-
   .rsi-chart {
     height: 220px;
   }
 
-
   .macd-chart {
     height: 240px;
   }
-
 }
 </style>
