@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# Django
+db.sqlite3
+*.sqlite3
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Data
+data/raw/
+data/processed/
+data/models/
+
+# Node
+node_modules/
+dist/
+
+# Logs
+*.log
