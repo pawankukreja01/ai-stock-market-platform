@@ -6,7 +6,8 @@
 
         <p>
           OHLC candlestick chart with moving averages,
-          Bollinger Bands, volume, RSI, MACD, Stochastic and ATR
+          Bollinger Bands, volume, RSI, MACD, Stochastic,
+          ATR and ROC
         </p>
       </div>
 
@@ -80,6 +81,11 @@
         ref="atrChartElement"
         class="atr-chart"
       ></div>
+
+      <div
+        ref="rocChartElement"
+        class="roc-chart"
+      ></div>
     </div>
   </section>
 </template>
@@ -127,6 +133,9 @@ const stochasticChartElement =
   ref(null);
 
 const atrChartElement =
+  ref(null);
+
+const rocChartElement =
   ref(null);
 
 const prices = ref([]);
@@ -659,14 +668,10 @@ const calculateATR = (
     return atr;
   }
 
-  // First trading day:
-  // True Range = High - Low
   trueRanges[0] =
     highValues[0] -
     lowValues[0];
 
-  // Calculate True Range
-  // for every following day.
   for (
     let i = 1;
     i < closeValues.length;
@@ -696,9 +701,6 @@ const calculateATR = (
       );
   }
 
-  // First ATR is the simple
-  // average of the first
-  // "period" True Range values.
   if (
     closeValues.length >= period
   ) {
@@ -720,8 +722,6 @@ const calculateATR = (
     atr[period - 1] =
       firstATR;
 
-    // Wilder-style smoothing
-    // for subsequent ATR values.
     for (
       let i = period;
       i < closeValues.length;
@@ -737,6 +737,49 @@ const calculateATR = (
   }
 
   return atr;
+};
+
+const calculateROC = (
+  values,
+  period = 12
+) => {
+  const roc =
+    new Array(
+      values.length
+    ).fill(null);
+
+  if (
+    values.length <= period
+  ) {
+    return roc;
+  }
+
+  for (
+    let i = period;
+    i < values.length;
+    i++
+  ) {
+    const previousPrice =
+      values[i - period];
+
+    if (
+      previousPrice === 0
+    ) {
+      continue;
+    }
+
+    roc[i] =
+      (
+        (
+          values[i] -
+          previousPrice
+        ) /
+        previousPrice
+      ) *
+      100;
+  }
+
+  return roc;
 };
 
 const calculateMACD = (
@@ -909,7 +952,8 @@ const renderCharts = async () => {
     !rsiChartElement.value ||
     !macdChartElement.value ||
     !stochasticChartElement.value ||
-    !atrChartElement.value
+    !atrChartElement.value ||
+    !rocChartElement.value
   ) {
     console.error(
       "One or more chart containers were not found."
@@ -1022,6 +1066,12 @@ const renderCharts = async () => {
       14
     );
 
+  const roc12 =
+    calculateROC(
+      closePrices,
+      12
+    );
+
   const macd =
     calculateMACD(
       closePrices
@@ -1076,6 +1126,14 @@ const renderCharts = async () => {
   console.log(
     "ATR 14 points:",
     atr14.filter(
+      (value) =>
+        value !== null
+    ).length
+  );
+
+  console.log(
+    "ROC 12 points:",
+    roc12.filter(
       (value) =>
         value !== null
     ).length
@@ -1918,6 +1976,96 @@ const renderCharts = async () => {
     showlegend: false,
   };
 
+  const rocTrace = {
+    x: dates,
+
+    y: roc12,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "ROC 12",
+
+    line: {
+      width: 2,
+
+      color: "#0891b2",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "ROC 12: %{y:.2f}%" +
+      "<extra></extra>",
+  };
+
+  const rocLayout = {
+    autosize: true,
+
+    margin: {
+      l: 70,
+
+      r: 30,
+
+      t: 30,
+
+      b: 40,
+    },
+
+    paper_bgcolor:
+      "#ffffff",
+
+    plot_bgcolor:
+      "#ffffff",
+
+    xaxis: {
+      type: "date",
+
+      showgrid: true,
+    },
+
+    yaxis: {
+      title: "ROC (%)",
+
+      showgrid: true,
+
+      fixedrange: false,
+
+      ticksuffix: "%",
+    },
+
+    hovermode:
+      "x unified",
+
+    showlegend: false,
+
+    shapes: [
+      {
+        type: "line",
+
+        xref: "paper",
+
+        x0: 0,
+
+        x1: 1,
+
+        y0: 0,
+
+        y1: 0,
+
+        line: {
+          width: 1,
+
+          dash: "dot",
+
+          color: "#6b7280",
+        },
+      },
+    ],
+  };
+
   const chartConfig = {
     responsive: true,
 
@@ -2017,8 +2165,18 @@ const renderCharts = async () => {
       chartConfig
     );
 
+    await Plotly.react(
+      rocChartElement.value,
+
+      [rocTrace],
+
+      rocLayout,
+
+      chartConfig
+    );
+
     console.log(
-      "Candlestick, SMA, Bollinger Bands, volume, RSI, MACD, Stochastic and ATR charts rendered successfully."
+      "Candlestick, SMA, Bollinger Bands, volume, RSI, MACD, Stochastic, ATR and ROC charts rendered successfully."
     );
   }
 
@@ -2111,6 +2269,14 @@ onBeforeUnmount(() => {
   ) {
     Plotly.purge(
       atrChartElement.value
+    );
+  }
+
+  if (
+    rocChartElement.value
+  ) {
+    Plotly.purge(
+      rocChartElement.value
     );
   }
 });
@@ -2237,6 +2403,12 @@ onBeforeUnmount(() => {
   height: 280px;
 }
 
+.roc-chart {
+  width: 100%;
+
+  height: 280px;
+}
+
 .chart-message {
   padding: 20px;
 
@@ -2279,6 +2451,10 @@ onBeforeUnmount(() => {
   }
 
   .atr-chart {
+    height: 240px;
+  }
+
+  .roc-chart {
     height: 240px;
   }
 }
