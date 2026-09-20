@@ -6,7 +6,7 @@
 
         <p>
           OHLC candlestick chart with moving averages,
-          Bollinger Bands, trading volume, RSI and MACD
+          Bollinger Bands, volume, RSI, MACD and Stochastic
         </p>
       </div>
 
@@ -70,6 +70,11 @@
         ref="macdChartElement"
         class="macd-chart"
       ></div>
+
+      <div
+        ref="stochasticChartElement"
+        class="stochastic-chart"
+      ></div>
     </div>
   </section>
 </template>
@@ -111,6 +116,9 @@ const rsiChartElement =
   ref(null);
 
 const macdChartElement =
+  ref(null);
+
+const stochasticChartElement =
   ref(null);
 
 const prices = ref([]);
@@ -516,6 +524,111 @@ const calculateBollingerBands = (
   };
 };
 
+const calculateStochastic = (
+  highValues,
+  lowValues,
+  closeValues,
+  period = 14,
+  signalPeriod = 3
+) => {
+  const percentK =
+    new Array(
+      closeValues.length
+    ).fill(null);
+
+  const percentD =
+    new Array(
+      closeValues.length
+    ).fill(null);
+
+  for (
+    let i = period - 1;
+    i < closeValues.length;
+    i++
+  ) {
+    const highWindow =
+      highValues.slice(
+        i - period + 1,
+        i + 1
+      );
+
+    const lowWindow =
+      lowValues.slice(
+        i - period + 1,
+        i + 1
+      );
+
+    const highestHigh =
+      Math.max(
+        ...highWindow
+      );
+
+    const lowestLow =
+      Math.min(
+        ...lowWindow
+      );
+
+    const range =
+      highestHigh -
+      lowestLow;
+
+    if (
+      range === 0
+    ) {
+      percentK[i] = 0;
+      continue;
+    }
+
+    percentK[i] =
+      (
+        (
+          closeValues[i] -
+          lowestLow
+        ) /
+        range
+      ) *
+      100;
+  }
+
+  for (
+    let i = signalPeriod - 1;
+    i < percentK.length;
+    i++
+  ) {
+    const window =
+      percentK.slice(
+        i - signalPeriod + 1,
+        i + 1
+      );
+
+    if (
+      window.some(
+        (value) =>
+          value === null
+      )
+    ) {
+      continue;
+    }
+
+    const sum =
+      window.reduce(
+        (
+          total,
+          value
+        ) => total + value,
+        0
+      );
+
+    percentD[i] =
+      sum / signalPeriod;
+  }
+
+  return {
+    percentK,
+    percentD,
+  };
+};
+
 const calculateMACD = (
   values
 ) => {
@@ -681,38 +794,16 @@ const loadPrices = async () => {
 
 const renderCharts = async () => {
   if (
-    !priceChartElement.value
+    !priceChartElement.value ||
+    !volumeChartElement.value ||
+    !rsiChartElement.value ||
+    !macdChartElement.value ||
+    !stochasticChartElement.value
   ) {
     console.error(
-      "Price chart container was not found."
+      "One or more chart containers were not found."
     );
-    return;
-  }
 
-  if (
-    !volumeChartElement.value
-  ) {
-    console.error(
-      "Volume chart container was not found."
-    );
-    return;
-  }
-
-  if (
-    !rsiChartElement.value
-  ) {
-    console.error(
-      "RSI chart container was not found."
-    );
-    return;
-  }
-
-  if (
-    !macdChartElement.value
-  ) {
-    console.error(
-      "MACD chart container was not found."
-    );
     return;
   }
 
@@ -722,6 +813,7 @@ const renderCharts = async () => {
     console.warn(
       "No prices available for charts."
     );
+
     return;
   }
 
@@ -802,6 +894,15 @@ const renderCharts = async () => {
       14
     );
 
+  const stochastic =
+    calculateStochastic(
+      highPrices,
+      lowPrices,
+      closePrices,
+      14,
+      3
+    );
+
   const macd =
     calculateMACD(
       closePrices
@@ -822,30 +923,6 @@ const renderCharts = async () => {
   );
 
   console.log(
-    "SMA 20 points:",
-    sma20.filter(
-      (value) =>
-        value !== null
-    ).length
-  );
-
-  console.log(
-    "SMA 50 points:",
-    sma50.filter(
-      (value) =>
-        value !== null
-    ).length
-  );
-
-  console.log(
-    "SMA 200 points:",
-    sma200.filter(
-      (value) =>
-        value !== null
-    ).length
-  );
-
-  console.log(
     "Bollinger Band points:",
     bollinger.middleBand.filter(
       (value) =>
@@ -856,6 +933,22 @@ const renderCharts = async () => {
   console.log(
     "RSI 14 points:",
     rsi14.filter(
+      (value) =>
+        value !== null
+    ).length
+  );
+
+  console.log(
+    "Stochastic %K points:",
+    stochastic.percentK.filter(
+      (value) =>
+        value !== null
+    ).length
+  );
+
+  console.log(
+    "Stochastic %D points:",
+    stochastic.percentD.filter(
       (value) =>
         value !== null
     ).length
@@ -1026,7 +1119,6 @@ const renderCharts = async () => {
       width: 1.2,
 
       color: "#111827",
-
     },
 
     connectgaps: false,
@@ -1488,6 +1580,151 @@ const renderCharts = async () => {
     ],
   };
 
+  const stochasticKTrace = {
+    x: dates,
+
+    y: stochastic.percentK,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "%K",
+
+    line: {
+      width: 2,
+
+      color: "#2563eb",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "%K: %{y:.2f}" +
+      "<extra></extra>",
+  };
+
+  const stochasticDTrace = {
+    x: dates,
+
+    y: stochastic.percentD,
+
+    type: "scatter",
+
+    mode: "lines",
+
+    name: "%D",
+
+    line: {
+      width: 2,
+
+      color: "#f59e0b",
+    },
+
+    connectgaps: false,
+
+    hovertemplate:
+      "<b>%{x}</b><br>" +
+      "%D: %{y:.2f}" +
+      "<extra></extra>",
+  };
+
+  const stochasticLayout = {
+    autosize: true,
+
+    margin: {
+      l: 70,
+
+      r: 30,
+
+      t: 30,
+
+      b: 40,
+    },
+
+    paper_bgcolor:
+      "#ffffff",
+
+    plot_bgcolor:
+      "#ffffff",
+
+    xaxis: {
+      type: "date",
+
+      showgrid: true,
+    },
+
+    yaxis: {
+      title: "Stochastic",
+
+      range: [0, 100],
+
+      showgrid: true,
+
+      fixedrange: false,
+    },
+
+    hovermode:
+      "x unified",
+
+    showlegend: true,
+
+    legend: {
+      orientation: "h",
+
+      x: 0,
+
+      y: 1.05,
+    },
+
+    shapes: [
+      {
+        type: "line",
+
+        xref: "paper",
+
+        x0: 0,
+
+        x1: 1,
+
+        y0: 80,
+
+        y1: 80,
+
+        line: {
+          width: 1,
+
+          dash: "dash",
+
+          color: "#dc2626",
+        },
+      },
+
+      {
+        type: "line",
+
+        xref: "paper",
+
+        x0: 0,
+
+        x1: 1,
+
+        y0: 20,
+
+        y1: 20,
+
+        line: {
+          width: 1,
+
+          dash: "dash",
+
+          color: "#16a34a",
+        },
+      },
+    ],
+  };
+
   const chartConfig = {
     responsive: true,
 
@@ -1563,8 +1800,22 @@ const renderCharts = async () => {
       chartConfig
     );
 
+    await Plotly.react(
+      stochasticChartElement.value,
+
+      [
+        stochasticKTrace,
+
+        stochasticDTrace,
+      ],
+
+      stochasticLayout,
+
+      chartConfig
+    );
+
     console.log(
-      "Candlestick, SMA, Bollinger Bands, volume, RSI and MACD charts rendered successfully."
+      "Candlestick, SMA, Bollinger Bands, volume, RSI, MACD and Stochastic charts rendered successfully."
     );
   }
 
@@ -1641,6 +1892,14 @@ onBeforeUnmount(() => {
   ) {
     Plotly.purge(
       macdChartElement.value
+    );
+  }
+
+  if (
+    stochasticChartElement.value
+  ) {
+    Plotly.purge(
+      stochasticChartElement.value
     );
   }
 });
@@ -1755,6 +2014,12 @@ onBeforeUnmount(() => {
   height: 280px;
 }
 
+.stochastic-chart {
+  width: 100%;
+
+  height: 280px;
+}
+
 .chart-message {
   padding: 20px;
 
@@ -1789,6 +2054,10 @@ onBeforeUnmount(() => {
   }
 
   .macd-chart {
+    height: 240px;
+  }
+
+  .stochastic-chart {
     height: 240px;
   }
 }
