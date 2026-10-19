@@ -11,7 +11,7 @@ env/
 # Environment variables
 .env
 .env.*
-
+!.env.example
 # Django
 db.sqlite3
 *.sqlite3
@@ -40,3 +40,9 @@ dist/
 
 # Logs
 *.log
+
+# Local backups and runtime logs
+backups/
+logs/
+*.bak
+*.backup.vue

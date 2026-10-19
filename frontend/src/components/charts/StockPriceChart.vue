@@ -8,7 +8,7 @@
           OHLC candlestick chart with moving averages, Bollinger Bands,
           volume, RSI, MACD, Stochastic, ATR, ROC, OBV, ADX, +DI, -DI,
           Support & Resistance, Golden Cross, Death Cross, Market Regime,
-          Performance Analysis, Benchmark Comparison and Fundamentals
+          Performance Analysis, Benchmark Comparison, Fundamentals and Risk Analysis
         </p>
       </div>
 
@@ -730,6 +730,691 @@
     </div>
 
     <!-- =====================================================
+         STEP 17.2 - RISK ANALYSIS UI
+    ====================================================== -->
+
+    <div class="risk-panel">
+      <div class="risk-header">
+        <div>
+          <span class="risk-title">
+            Risk Analysis
+          </span>
+
+          <span class="risk-subtitle">
+            Historical risk metrics for
+            {{ selectedPeriodLabel }}
+          </span>
+        </div>
+
+        <div
+          v-if="riskMetrics && riskMetrics.benchmark"
+          class="risk-benchmark-badge"
+        >
+          Benchmark: {{ riskMetrics.benchmark }}
+        </div>
+      </div>
+
+      <div
+        v-if="riskLoading"
+        class="risk-loading"
+      >
+        Loading risk metrics...
+      </div>
+
+      <div
+        v-else-if="riskError"
+        class="risk-error"
+      >
+        {{ riskError }}
+      </div>
+
+      <div
+        v-else-if="!riskMetrics"
+        class="risk-empty"
+      >
+        No risk metrics available for this period.
+      </div>
+
+      <template v-else>
+        <div class="risk-period">
+          Historical risk analysis from
+          {{ formatRiskDate(riskPeriod?.startDate) }}
+          to
+          {{ formatRiskDate(riskPeriod?.endDate) }}
+          using {{ formatRiskObservations(riskMetrics.observations) }} observations.
+        </div>
+
+        <div class="risk-grid">
+          <div class="risk-item">
+            <span class="risk-label">
+              Annualised Return
+            </span>
+            <strong
+              :class="returnValueClass(
+                toPercentageValue(riskMetrics.annualised_return)
+              )"
+            >
+              {{ formatRiskPercentage(riskMetrics.annualised_return) }}
+            </strong>
+            <span class="risk-help">
+              Compounded historical return rate for the selected period.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Annualised Volatility
+            </span>
+            <strong>
+              {{ formatRiskPercentage(riskMetrics.annualised_volatility) }}
+            </strong>
+            <span class="risk-help">
+              Annualised standard deviation of daily returns.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Maximum Drawdown
+            </span>
+            <strong class="negative-value">
+              {{ formatRiskPercentage(riskMetrics.maximum_drawdown) }}
+            </strong>
+            <span class="risk-help">
+              Largest historical peak-to-trough decline.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Sharpe Ratio
+            </span>
+            <strong>
+              {{ formatRiskRatio(riskMetrics.sharpe_ratio) }}
+            </strong>
+            <span class="risk-help">
+              Historical return relative to total variability.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Sortino Ratio
+            </span>
+            <strong>
+              {{ formatRiskRatio(riskMetrics.sortino_ratio) }}
+            </strong>
+            <span class="risk-help">
+              Historical return relative to downside variability.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Downside Deviation
+            </span>
+            <strong>
+              {{ formatRiskPercentage(riskMetrics.downside_deviation) }}
+            </strong>
+            <span class="risk-help">
+              Annualised variability from returns below the minimum acceptable return.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              VaR (95%)
+            </span>
+            <strong class="negative-value">
+              {{ formatRiskPercentage(riskMetrics.var_95) }}
+            </strong>
+            <span class="risk-help">
+              Historical 5th-percentile daily return.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Expected Shortfall (95%)
+            </span>
+            <strong class="negative-value">
+              {{ formatRiskPercentage(riskMetrics.expected_shortfall_95) }}
+            </strong>
+            <span class="risk-help">
+              Average historical daily return in the worst 5% tail.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Historical Loss Frequency
+            </span>
+            <strong>
+              {{ formatRiskPercentage(riskMetrics.historical_loss_frequency) }}
+            </strong>
+            <span class="risk-help">
+              Share of observed trading days with a negative return.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Beta vs S&amp;P 500
+            </span>
+            <strong>
+              {{ formatRiskRatio(riskMetrics.beta) }}
+            </strong>
+            <span class="risk-help">
+              Sensitivity of the stock's daily returns to the S&amp;P 500.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              S&amp;P 500 Correlation
+            </span>
+            <strong>
+              {{ formatRiskCorrelation(riskMetrics.benchmark_correlation) }}
+            </strong>
+            <span class="risk-help">
+              Pearson correlation between stock and benchmark daily returns.
+            </span>
+          </div>
+
+          <div class="risk-item">
+            <span class="risk-label">
+              Observations
+            </span>
+            <strong>
+              {{ formatRiskObservations(riskMetrics.observations) }}
+            </strong>
+            <span class="risk-help">
+              Number of historical closing-price observations used.
+            </span>
+          </div>
+        </div>
+
+        <div class="risk-note">
+          These are historical measurements derived from the selected data period.
+          They are not forecasts and do not represent a guaranteed future outcome.
+        </div>
+
+        <!-- =====================================================
+             STEP 17.3 - RISK VISUALISATION & INTERPRETATION
+        ====================================================== -->
+
+        <div class="risk-visual-section">
+          <div class="risk-section-heading">
+            <div>
+              <span class="risk-section-title">
+                Risk Visualisation
+              </span>
+
+              <span class="risk-section-subtitle">
+                Historical return, drawdown and daily-loss distribution for
+                {{ selectedPeriodLabel }}
+              </span>
+            </div>
+          </div>
+
+          <div class="risk-visual-grid">
+            <div class="risk-visual-card">
+              <div class="risk-visual-card-header">
+                <span class="risk-visual-card-title">
+                  Risk–Return Profile
+                </span>
+                <span class="risk-visual-card-subtitle">
+                  Annualised return vs annualised volatility
+                </span>
+              </div>
+              <div
+                ref="riskReturnChartElement"
+                class="risk-return-chart"
+              ></div>
+            </div>
+
+            <div class="risk-visual-card">
+              <div class="risk-visual-card-header">
+                <span class="risk-visual-card-title">
+                  Historical Drawdown
+                </span>
+                <span class="risk-visual-card-subtitle">
+                  Percentage decline from the running peak
+                </span>
+              </div>
+              <div
+                ref="riskDrawdownChartElement"
+                class="risk-drawdown-chart"
+              ></div>
+            </div>
+
+            <div class="risk-visual-card risk-distribution-card">
+              <div class="risk-visual-card-header">
+                <span class="risk-visual-card-title">
+                  Daily Return Distribution
+                </span>
+                <span class="risk-visual-card-subtitle">
+                  Historical daily returns with VaR and Expected Shortfall
+                </span>
+              </div>
+              <div
+                ref="riskDistributionChartElement"
+                class="risk-distribution-chart"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="risk-interpretation-panel">
+          <div class="risk-section-heading">
+            <div>
+              <span class="risk-section-title">
+                Risk Interpretation
+              </span>
+
+              <span class="risk-section-subtitle">
+                Plain-language interpretation of the measured historical statistics
+              </span>
+            </div>
+          </div>
+
+          <div class="risk-interpretation-grid">
+            <div class="risk-interpretation-item">
+              <span class="risk-interpretation-label">
+                Return & Volatility
+              </span>
+              <p>
+                {{ riskInterpretation.returnVolatility }}
+              </p>
+            </div>
+
+            <div class="risk-interpretation-item">
+              <span class="risk-interpretation-label">
+                Drawdown
+              </span>
+              <p>
+                {{ riskInterpretation.drawdown }}
+              </p>
+            </div>
+
+            <div class="risk-interpretation-item">
+              <span class="risk-interpretation-label">
+                Tail Loss
+              </span>
+              <p>
+                {{ riskInterpretation.tailRisk }}
+              </p>
+            </div>
+
+            <div class="risk-interpretation-item">
+              <span class="risk-interpretation-label">
+                Benchmark Relationship
+              </span>
+              <p>
+                {{ riskInterpretation.benchmark }}
+              </p>
+            </div>
+          </div>
+
+          <div class="risk-interpretation-note">
+            Interpretation is based only on the historical observations shown in this analysis.
+            It is descriptive rather than a forecast or investment recommendation.
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- =====================================================
+         STEP 18.7 - ML RETURN PREDICTION DASHBOARD
+    ====================================================== -->
+
+    <div class="ml-prediction-panel">
+      <div class="ml-prediction-header">
+        <div>
+          <span class="ml-prediction-title">
+            ML Return Prediction
+          </span>
+
+          <span class="ml-prediction-subtitle">
+            Machine-learning estimate of future return with an empirical prediction range
+          </span>
+        </div>
+
+        <div class="ml-prediction-controls">
+          <div class="ml-control-group">
+            <span class="ml-control-label">Model</span>
+            <div class="ml-control-buttons">
+              <button
+                v-for="model in mlModels"
+                :key="model.value"
+                type="button"
+                :class="{ active: mlModel === model.value }"
+                @click="changeMLModel(model.value)"
+              >
+                {{ model.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="ml-control-group">
+            <span class="ml-control-label">Horizon</span>
+            <div class="ml-control-buttons">
+              <button
+                v-for="horizon in mlHorizons"
+                :key="horizon.value"
+                type="button"
+                :class="{ active: mlHorizon === horizon.value }"
+                @click="changeMLHorizon(horizon.value)"
+              >
+                {{ horizon.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="mlLoading"
+        class="ml-prediction-loading"
+      >
+        Training {{ mlModelLabel }} and generating prediction...
+      </div>
+
+      <div
+        v-else-if="mlError"
+        class="ml-prediction-error"
+      >
+        {{ mlError }}
+      </div>
+
+      <div
+        v-else-if="!mlPrediction"
+        class="ml-prediction-empty"
+      >
+        No ML prediction is currently available.
+      </div>
+
+      <template v-else>
+        <div class="ml-prediction-period">
+          {{ mlPrediction.model_name }} prediction for
+          {{ mlPrediction.horizon_label }} using historical data through
+          {{ formatMLDate(mlPrediction.historical_period?.end_date) }}.
+        </div>
+
+        <div class="ml-prediction-main-grid">
+          <div class="ml-prediction-primary-card">
+            <span class="ml-card-label">Expected Future Return</span>
+            <strong
+              class="ml-primary-value"
+              :class="returnValueClass(mlPredictionReturnPercentage)"
+            >
+              {{ formatMLPercentage(mlPrediction.prediction?.return) }}
+            </strong>
+            <span class="ml-card-help">
+              Model estimate for the selected future-return horizon.
+            </span>
+          </div>
+
+          <div class="ml-prediction-primary-card">
+            <span class="ml-card-label">Prediction Range</span>
+            <strong class="ml-range-value">
+              {{ formatMLPercentage(mlPrediction.prediction?.lower_return) }}
+              →
+              {{ formatMLPercentage(mlPrediction.prediction?.upper_return) }}
+            </strong>
+            <span class="ml-card-help">
+              Empirical {{ formatMLConfidence(mlPrediction.confidence) }} prediction interval calibrated from unseen historical data.
+            </span>
+          </div>
+
+          <div class="ml-prediction-primary-card">
+            <span class="ml-card-label">Current Price</span>
+            <strong>
+              {{ formatMLPrice(mlPrediction.prediction?.current_price) }}
+            </strong>
+            <span class="ml-card-help">
+              Latest stored closing price used to convert the return estimate into an illustrative price estimate.
+            </span>
+          </div>
+        </div>
+
+        <div class="ml-prediction-grid">
+          <div class="ml-prediction-item">
+            <span>Illustrative Price Estimate</span>
+            <strong>{{ formatMLPrice(mlPrediction.prediction?.estimated_price) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Lower Price Estimate</span>
+            <strong>{{ formatMLPrice(mlPrediction.prediction?.lower_price) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Upper Price Estimate</span>
+            <strong>{{ formatMLPrice(mlPrediction.prediction?.upper_price) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Validation MAE</span>
+            <strong>{{ formatMLPercentage(mlPrediction.validation?.mae) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Validation RMSE</span>
+            <strong>{{ formatMLPercentage(mlPrediction.validation?.rmse) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Directional Accuracy</span>
+            <strong>{{ formatMLPercentage(mlPrediction.validation?.directional_accuracy) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Calibration Error Margin</span>
+            <strong>{{ formatMLPercentage(mlPrediction.validation?.calibration_error_margin) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Training Observations</span>
+            <strong>{{ formatMLObservations(mlPrediction.dataset?.training_observations) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Calibration Observations</span>
+            <strong>{{ formatMLObservations(mlPrediction.dataset?.calibration_observations) }}</strong>
+          </div>
+
+          <div class="ml-prediction-item">
+            <span>Test Observations</span>
+            <strong>{{ formatMLObservations(mlPrediction.dataset?.testing_observations) }}</strong>
+          </div>
+        </div>
+
+        <div class="ml-prediction-note">
+          <strong>Important:</strong> The model predicts a future return, not a guaranteed future price.
+          Price estimates shown above are mathematical conversions of the predicted return and its range.
+          Validation metrics come from a chronological historical holdout, and final model selection will be
+          tested further using walk-forward backtesting in Step 19.
+        </div>
+      </template>
+    </div>
+
+    <!-- =====================================================
+         STEP 19.3 - BACKTEST VISUALISATION
+    ====================================================== -->
+
+    <div class="backtest-panel">
+      <div class="backtest-header">
+        <div>
+          <span class="backtest-title">
+            Strategy Backtest
+          </span>
+
+          <span class="backtest-subtitle">
+            Walk-forward historical simulation using the current ML model and horizon
+          </span>
+        </div>
+
+        <button
+          type="button"
+          class="backtest-run-button"
+          :disabled="backtestLoading"
+          @click="loadBacktest"
+        >
+          {{ backtestLoading ? "Running Backtest..." : "Run Backtest" }}
+        </button>
+      </div>
+
+      <div class="backtest-configuration">
+        <span>Model: <strong>{{ mlModelLabel }}</strong></span>
+        <span>Horizon: <strong>{{ mlHorizonLabel }}</strong></span>
+        <span>Transaction Cost: <strong>5 bps</strong></span>
+        <span>Slippage: <strong>5 bps</strong></span>
+      </div>
+
+      <div
+        v-if="backtestLoading"
+        class="backtest-loading"
+      >
+        Running walk-forward backtest and generating strategy equity curves...
+      </div>
+
+      <div
+        v-else-if="backtestError"
+        class="backtest-error"
+      >
+        {{ backtestError }}
+      </div>
+
+      <div
+        v-else-if="!backtestResult"
+        class="backtest-empty"
+      >
+        Run the backtest to compare the ML strategy with Buy &amp; Hold and SMA 200.
+      </div>
+
+      <template v-else>
+        <div class="backtest-period">
+          Historical simulation: 
+          {{ formatBacktestDate(backtestResult.backtest_period?.start_date) }}
+          →
+          {{ formatBacktestDate(backtestResult.backtest_period?.end_date) }}
+          ·
+          {{ formatBacktestObservations(backtestResult.backtest_period?.observations) }}
+          observations
+        </div>
+
+        <div class="backtest-table-wrapper">
+          <table class="backtest-table">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>ML Strategy</th>
+                <th>Buy &amp; Hold</th>
+                <th>SMA 200</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td>Cumulative Return</td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.ml?.metrics?.cumulative_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.cumulative_return) }}
+                </td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.buy_and_hold?.metrics?.cumulative_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.cumulative_return) }}
+                </td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.sma?.metrics?.cumulative_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.cumulative_return) }}
+                </td>
+              </tr>
+
+              <tr>
+                <td>Annualised Return</td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.ml?.metrics?.annualised_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.annualised_return) }}
+                </td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.buy_and_hold?.metrics?.annualised_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.annualised_return) }}
+                </td>
+                <td :class="backtestReturnClass(backtestResult.strategies?.sma?.metrics?.annualised_return)">
+                  {{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.annualised_return) }}
+                </td>
+              </tr>
+
+              <tr>
+                <td>Annualised Volatility</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.annualised_volatility) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.annualised_volatility) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.annualised_volatility) }}</td>
+              </tr>
+
+              <tr>
+                <td>Maximum Drawdown</td>
+                <td class="negative-value">{{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.maximum_drawdown) }}</td>
+                <td class="negative-value">{{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.maximum_drawdown) }}</td>
+                <td class="negative-value">{{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.maximum_drawdown) }}</td>
+              </tr>
+
+              <tr>
+                <td>Sharpe Ratio</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.ml?.metrics?.sharpe_ratio) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.buy_and_hold?.metrics?.sharpe_ratio) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.sma?.metrics?.sharpe_ratio) }}</td>
+              </tr>
+
+              <tr>
+                <td>Sortino Ratio</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.ml?.metrics?.sortino_ratio) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.buy_and_hold?.metrics?.sortino_ratio) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.sma?.metrics?.sortino_ratio) }}</td>
+              </tr>
+
+              <tr>
+                <td>Win Rate</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.win_rate) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.win_rate) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.win_rate) }}</td>
+              </tr>
+
+              <tr>
+                <td>Profit Factor</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.ml?.metrics?.profit_factor) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.buy_and_hold?.metrics?.profit_factor) }}</td>
+                <td>{{ formatBacktestNumber(backtestResult.strategies?.sma?.metrics?.profit_factor) }}</td>
+              </tr>
+
+              <tr>
+                <td>Trades</td>
+                <td>{{ formatBacktestObservations(backtestResult.strategies?.ml?.metrics?.trades) }}</td>
+                <td>{{ formatBacktestObservations(backtestResult.strategies?.buy_and_hold?.metrics?.trades) }}</td>
+                <td>{{ formatBacktestObservations(backtestResult.strategies?.sma?.metrics?.trades) }}</td>
+              </tr>
+
+              <tr>
+                <td>Trading Costs</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.ml?.metrics?.total_trading_cost) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.buy_and_hold?.metrics?.total_trading_cost) }}</td>
+                <td>{{ formatBacktestPercentage(backtestResult.strategies?.sma?.metrics?.total_trading_cost) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div
+          ref="backtestChartElement"
+          class="backtest-chart"
+        ></div>
+
+        <div class="backtest-notes">
+          <strong>Backtest assumptions:</strong> 5 bps transaction cost + 5 bps slippage per position change.
+          The ML signal is generated using walk-forward training and executed one trading day later.
+          The equity curves are historical simulations and are not forecasts or guarantees of future returns.
+        </div>
+      </template>
+    </div>
+
+    <!-- =====================================================
          LOADING / ERROR
     ====================================================== -->
 
@@ -813,6 +1498,7 @@
 
 <script setup>
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -820,12 +1506,15 @@ import {
   watch,
 } from "vue";
 
-import Plotly from "plotly.js-dist-min";
+import Plotly from "plotly.js-finance-dist-min";
 
 import {
   getHistoricalPrices,
   getBenchmarkComparison,
   getFundamentals,
+  getRiskMetrics,
+  getMLReturnPrediction,
+  getBacktestResults,
 } from "../../services/api";
 
 /* =========================================================
@@ -859,6 +1548,15 @@ const obvChartElement = ref(null);
 const adxChartElement = ref(null);
 
 const benchmarkChartElement = ref(null);
+const backtestChartElement = ref(null);
+
+/* =========================================================
+   STEP 17.3 - RISK VISUALISATION REFERENCES
+========================================================= */
+
+const riskReturnChartElement = ref(null);
+const riskDrawdownChartElement = ref(null);
+const riskDistributionChartElement = ref(null);
 
 /* =========================================================
    STATE
@@ -888,6 +1586,73 @@ const fundamentalsLoading = ref(false);
 const fundamentalsError = ref("");
 const fundamentalsPeriod = ref("annual");
 const latestFundamental = ref(null);
+
+/* =========================================================
+   STEP 17.2 - RISK ANALYSIS
+========================================================= */
+
+const riskMetrics = ref(null);
+const riskLoading = ref(false);
+const riskError = ref("");
+const riskPeriod = ref({
+  startDate: "",
+  endDate: "",
+});
+
+/* =========================================================
+   STEP 17.3 - RISK INTERPRETATION STATE
+========================================================= */
+
+const riskInterpretation = ref({
+  returnVolatility: "Risk-return information will appear when the historical metrics are available.",
+  drawdown: "Historical drawdown information will appear when the selected price history is available.",
+  tailRisk: "Historical tail-loss information will appear when VaR and Expected Shortfall are available.",
+  benchmark: "Benchmark relationship information will appear when beta and correlation are available.",
+});
+
+/* =========================================================
+   STEP 18.7 - ML RETURN PREDICTION
+========================================================= */
+
+const mlPrediction = ref(null);
+const mlLoading = ref(false);
+const mlError = ref("");
+const mlModel = ref("random_forest");
+const mlHorizon = ref(5);
+const mlConfidence = ref(0.90);
+
+/* =========================================================
+   STEP 19.3 - BACKTEST VISUALISATION
+========================================================= */
+
+const backtestResult = ref(null);
+const backtestLoading = ref(false);
+const backtestError = ref("");
+
+const mlModels = [
+  {
+    label: "Linear Regression",
+    value: "linear_regression",
+  },
+  {
+    label: "Random Forest",
+    value: "random_forest",
+  },
+  {
+    label: "XGBoost",
+    value: "xgboost",
+  },
+];
+
+const mlHorizons = [
+  { label: "1D", value: 1 },
+  { label: "5D", value: 5 },
+  { label: "1M", value: 20 },
+  { label: "3M", value: 60 },
+  { label: "6M", value: 126 },
+  { label: "1Y", value: 252 },
+];
+
 
 const periods = [
   {
@@ -3840,7 +4605,994 @@ const formatFundamentalDate = (value) => {
   });
 };
 
-const loadPrices = async () => {
+/* =========================================================
+   STEP 17.2
+   RISK ANALYSIS
+========================================================= */
+
+const loadRiskMetrics = async (
+  startDate,
+  endDate
+) => {
+  try {
+    riskLoading.value = true;
+    riskError.value = "";
+    riskMetrics.value = null;
+
+    const response = await getRiskMetrics(
+      props.symbol,
+      startDate,
+      endDate
+    );
+
+    if (
+      !response ||
+      !response.risk_metrics
+    ) {
+      throw new Error(
+        "Invalid risk metrics response."
+      );
+    }
+
+    riskMetrics.value =
+      response.risk_metrics;
+
+    riskPeriod.value = {
+      startDate:
+        response.start_date ||
+        startDate,
+      endDate:
+        response.end_date ||
+        endDate,
+    };
+
+    console.log(
+      "Risk Metrics:",
+      riskMetrics.value
+    );
+  } catch (err) {
+    console.error(
+      "Risk metrics loading failed:",
+      err
+    );
+
+    riskMetrics.value = null;
+    riskPeriod.value = {
+      startDate: "",
+      endDate: "",
+    };
+
+    riskError.value =
+      "Unable to load risk metrics.";
+  } finally {
+    riskLoading.value = false;
+
+    if (riskMetrics.value) {
+      await nextTick();
+      renderRiskVisualizations();
+    }
+  }
+};
+
+const toPercentageValue = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    Number.isNaN(Number(value))
+  ) {
+    return null;
+  }
+
+  return Number(value) * 100;
+};
+
+const formatRiskPercentage = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return `${(Number(value) * 100).toFixed(2)}%`;
+};
+
+const formatRiskRatio = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return Number(value).toFixed(2);
+};
+
+const formatRiskCorrelation = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return Number(value).toFixed(3);
+};
+
+const formatRiskObservations = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return Number(value).toLocaleString("en-US");
+};
+
+const formatRiskDate = (value) => {
+  if (!value) return "N/A";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+/* =========================================================
+   STEP 17.3
+   RISK VISUALISATION & INTERPRETATION
+========================================================= */
+
+const getRiskDailyReturns = () => {
+  const result = [];
+
+  for (let i = 1; i < prices.value.length; i++) {
+    const previousClose = Number(
+      prices.value[i - 1].close_price
+    );
+
+    const currentClose = Number(
+      prices.value[i].close_price
+    );
+
+    if (
+      Number.isFinite(previousClose) &&
+      Number.isFinite(currentClose) &&
+      previousClose > 0 &&
+      currentClose > 0
+    ) {
+      result.push({
+        date: prices.value[i].date,
+        value: ((currentClose - previousClose) / previousClose) * 100,
+      });
+    }
+  }
+
+  return result;
+};
+
+const calculateDrawdownSeries = () => {
+  let runningPeak = null;
+
+  return prices.value
+    .map((item) => ({
+      date: item.date,
+      close: Number(item.close_price),
+    }))
+    .filter(
+      (item) =>
+        Number.isFinite(item.close) &&
+        item.close > 0
+    )
+    .map((item) => {
+      if (runningPeak === null || item.close > runningPeak) {
+        runningPeak = item.close;
+      }
+
+      return {
+        date: item.date,
+        drawdown: ((item.close - runningPeak) / runningPeak) * 100,
+      };
+    });
+};
+
+const updateRiskInterpretation = () => {
+  if (!riskMetrics.value) {
+    return;
+  }
+
+  const metrics = riskMetrics.value;
+  const annualReturn = Number(metrics.annualised_return);
+  const volatility = Number(metrics.annualised_volatility);
+  const drawdown = Number(metrics.maximum_drawdown);
+  const var95 = Number(metrics.var_95);
+  const es95 = Number(metrics.expected_shortfall_95);
+  const beta = Number(metrics.beta);
+  const correlation = Number(metrics.benchmark_correlation);
+
+  riskInterpretation.value = {
+    returnVolatility:
+      Number.isFinite(annualReturn) && Number.isFinite(volatility)
+        ? `${props.symbol} recorded an annualised historical return of ${formatRiskPercentage(annualReturn)} alongside annualised volatility of ${formatRiskPercentage(volatility)} over the selected period.`
+        : "Annualised return and volatility could not both be calculated for this period.",
+
+    drawdown:
+      Number.isFinite(drawdown)
+        ? `The largest observed peak-to-trough decline was ${formatRiskPercentage(drawdown)}. The drawdown chart shows when the stock was below its previous running peak.`
+        : "Maximum drawdown could not be calculated for this period.",
+
+    tailRisk:
+      Number.isFinite(var95) && Number.isFinite(es95)
+        ? `The historical 95% VaR is ${formatRiskPercentage(var95)}, while Expected Shortfall is ${formatRiskPercentage(es95)}. Expected Shortfall describes the average return among observations at or below the VaR threshold.`
+        : "Historical tail-loss measures are not available for this period.",
+
+    benchmark:
+      Number.isFinite(beta) && Number.isFinite(correlation)
+        ? `Against the S&P 500, the measured beta is ${beta.toFixed(2)} and the daily-return correlation is ${correlation.toFixed(3)}.`
+        : "Benchmark beta and correlation are not available for this period.",
+  };
+};
+
+const renderRiskReturnChart = () => {
+  if (!riskReturnChartElement.value || !riskMetrics.value) {
+    return;
+  }
+
+  const points = [];
+
+  const addPoint = (name, annualizedReturn, annualizedVolatility) => {
+    const x = Number(annualizedVolatility);
+    const y = Number(annualizedReturn);
+
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      points.push({
+        name,
+        x,
+        y,
+      });
+    }
+  };
+
+  addPoint(
+    props.symbol,
+    Number(riskMetrics.value.annualised_return) * 100,
+    Number(riskMetrics.value.annualised_volatility) * 100
+  );
+
+  if (benchmarkMetrics.value) {
+    addPoint(
+      "S&P 500",
+      benchmarkMetrics.value.sp500?.annualizedReturn,
+      benchmarkMetrics.value.sp500?.annualizedVolatility
+    );
+
+    addPoint(
+      "NASDAQ-100",
+      benchmarkMetrics.value.nasdaq100?.annualizedReturn,
+      benchmarkMetrics.value.nasdaq100?.annualizedVolatility
+    );
+
+    addPoint(
+      benchmarkMetrics.value.sectorName || "Sector ETF",
+      benchmarkMetrics.value.sector?.annualizedReturn,
+      benchmarkMetrics.value.sector?.annualizedVolatility
+    );
+  }
+
+  const trace = {
+    x: points.map((point) => point.x),
+    y: points.map((point) => point.y),
+    text: points.map((point) => point.name),
+    type: "scatter",
+    mode: "markers+text",
+    textposition: "top center",
+    hovertemplate:
+      "%{text}<br>Volatility: %{x:.2f}%<br>Return: %{y:.2f}%<extra></extra>",
+    marker: {
+      size: 11,
+      color: "#2563eb",
+    },
+    name: "Assets",
+  };
+
+  const layout = {
+    height: 330,
+    margin: {
+      l: 60,
+      r: 25,
+      t: 20,
+      b: 55,
+    },
+    paper_bgcolor: "white",
+    plot_bgcolor: "white",
+    showlegend: false,
+    xaxis: {
+      title: "Annualised Volatility (%)",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+      zeroline: false,
+    },
+    yaxis: {
+      title: "Annualised Return (%)",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+      zeroline: true,
+      zerolinecolor: "#d1d5db",
+    },
+  };
+
+  const config = {
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: [
+      "lasso2d",
+      "select2d",
+    ],
+  };
+
+  Plotly.react(
+    riskReturnChartElement.value,
+    [trace],
+    layout,
+    config
+  );
+};
+
+const renderRiskDrawdownChart = () => {
+  if (!riskDrawdownChartElement.value) {
+    return;
+  }
+
+  const series = calculateDrawdownSeries();
+
+  if (!series.length) {
+    return;
+  }
+
+  const trace = {
+    x: series.map((item) => item.date),
+    y: series.map((item) => item.drawdown),
+    type: "scatter",
+    mode: "lines",
+    name: "Drawdown",
+    line: {
+      width: 2,
+      color: "#dc2626",
+    },
+    fill: "tozeroy",
+    fillcolor: "rgba(220, 38, 38, 0.10)",
+    hovertemplate:
+      "%{x|%Y-%m-%d}<br>Drawdown: %{y:.2f}%<extra></extra>",
+  };
+
+  const maxDrawdown = Number(
+    riskMetrics.value?.maximum_drawdown
+  ) * 100;
+
+  const shapes = [
+    {
+      type: "line",
+      x0: series[0].date,
+      x1: series[series.length - 1].date,
+      y0: 0,
+      y1: 0,
+      line: {
+        width: 1,
+        color: "#9ca3af",
+        dash: "dash",
+      },
+    },
+  ];
+
+  if (Number.isFinite(maxDrawdown)) {
+    shapes.push({
+      type: "line",
+      x0: series[0].date,
+      x1: series[series.length - 1].date,
+      y0: maxDrawdown,
+      y1: maxDrawdown,
+      line: {
+        width: 1,
+        color: "#991b1b",
+        dash: "dot",
+      },
+    });
+  }
+
+  const layout = {
+    height: 330,
+    margin: {
+      l: 60,
+      r: 25,
+      t: 20,
+      b: 55,
+    },
+    paper_bgcolor: "white",
+    plot_bgcolor: "white",
+    showlegend: false,
+    shapes,
+    xaxis: {
+      type: "date",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+    },
+    yaxis: {
+      title: "Drawdown (%)",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+      ticksuffix: "%",
+    },
+  };
+
+  const config = {
+    responsive: true,
+    displaylogo: false,
+  };
+
+  Plotly.react(
+    riskDrawdownChartElement.value,
+    [trace],
+    layout,
+    config
+  );
+};
+
+const renderRiskDistributionChart = () => {
+  if (!riskDistributionChartElement.value) {
+    return;
+  }
+
+  const dailyReturns = getRiskDailyReturns();
+
+  if (!dailyReturns.length) {
+    return;
+  }
+
+  const values = dailyReturns.map((item) => item.value);
+  const var95 = Number(riskMetrics.value?.var_95) * 100;
+  const es95 = Number(riskMetrics.value?.expected_shortfall_95) * 100;
+
+  const shapes = [
+    {
+      type: "line",
+      x0: 0,
+      x1: 0,
+      y0: 0,
+      y1: 1,
+      yref: "paper",
+      line: {
+        color: "#6b7280",
+        width: 1,
+        dash: "dash",
+      },
+    },
+  ];
+
+  const annotations = [
+    {
+      x: 0,
+      y: 1,
+      yref: "paper",
+      text: "0%",
+      showarrow: false,
+      yanchor: "bottom",
+      font: { size: 10, color: "#6b7280" },
+    },
+  ];
+
+  if (Number.isFinite(var95)) {
+    shapes.push({
+      type: "line",
+      x0: var95,
+      x1: var95,
+      y0: 0,
+      y1: 1,
+      yref: "paper",
+      line: {
+        color: "#d97706",
+        width: 2,
+        dash: "dot",
+      },
+    });
+
+    annotations.push({
+      x: var95,
+      y: 1,
+      yref: "paper",
+      text: `VaR 95% ${var95.toFixed(2)}%`,
+      showarrow: false,
+      yanchor: "bottom",
+      font: { size: 10, color: "#92400e" },
+    });
+  }
+
+  if (Number.isFinite(es95)) {
+    shapes.push({
+      type: "line",
+      x0: es95,
+      x1: es95,
+      y0: 0,
+      y1: 1,
+      yref: "paper",
+      line: {
+        color: "#7f1d1d",
+        width: 2,
+        dash: "dashdot",
+      },
+    });
+
+    annotations.push({
+      x: es95,
+      y: 0.88,
+      yref: "paper",
+      text: `ES 95% ${es95.toFixed(2)}%`,
+      showarrow: false,
+      yanchor: "bottom",
+      font: { size: 10, color: "#7f1d1d" },
+    });
+  }
+
+  const trace = {
+    x: values,
+    type: "histogram",
+    nbinsx: Math.min(40, Math.max(12, Math.round(Math.sqrt(values.length)))),
+    name: "Daily Returns",
+    marker: {
+      color: "#64748b",
+      line: {
+        color: "white",
+        width: 0.5,
+      },
+    },
+    hovertemplate:
+      "Daily return: %{x:.2f}%<br>Days: %{y}<extra></extra>",
+  };
+
+  const layout = {
+    height: 330,
+    margin: {
+      l: 60,
+      r: 25,
+      t: 20,
+      b: 55,
+    },
+    paper_bgcolor: "white",
+    plot_bgcolor: "white",
+    showlegend: false,
+    bargap: 0.04,
+    shapes,
+    annotations,
+    xaxis: {
+      title: "Daily Return (%)",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+    },
+    yaxis: {
+      title: "Observations",
+      showgrid: true,
+      gridcolor: "#f3f4f6",
+    },
+  };
+
+  const config = {
+    responsive: true,
+    displaylogo: false,
+  };
+
+  Plotly.react(
+    riskDistributionChartElement.value,
+    [trace],
+    layout,
+    config
+  );
+};
+
+const renderRiskVisualizations = () => {
+  if (!riskMetrics.value || !prices.value.length) {
+    return;
+  }
+
+  updateRiskInterpretation();
+  renderRiskReturnChart();
+  renderRiskDrawdownChart();
+  renderRiskDistributionChart();
+};
+
+
+const mlModelLabel = computed(() => {
+  const selected = mlModels.find(
+    (model) => model.value === mlModel.value
+  );
+
+  return selected?.label || mlModel.value;
+});
+
+const mlPredictionReturnPercentage = computed(() => {
+  const value = Number(
+    mlPrediction.value?.prediction?.return
+  );
+
+  return Number.isFinite(value)
+    ? value * 100
+    : null;
+});
+
+const formatMLPercentage = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return `${(Number(value) * 100).toFixed(2)}%`;
+};
+
+const formatMLPrice = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return `$${Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+const formatMLConfidence = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return `${(Number(value) * 100).toFixed(0)}%`;
+};
+
+const formatMLObservations = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return Number(value).toLocaleString("en-US");
+};
+
+const formatMLDate = (value) => {
+  if (!value) {
+    return "N/A";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const mlHorizonLabel = computed(() => {
+  const selected = mlHorizons.find(
+    (horizon) => horizon.value === mlHorizon.value
+  );
+
+  return selected?.label || `${mlHorizon.value}D`;
+});
+
+const formatBacktestPercentage = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return `${(Number(value) * 100).toFixed(2)}%`;
+};
+
+const formatBacktestNumber = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  if (!Number.isFinite(Number(value))) {
+    return "N/A";
+  }
+
+  return Number(value).toFixed(2);
+};
+
+const formatBacktestObservations = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "N/A";
+  }
+
+  return Number(value).toLocaleString("en-US");
+};
+
+const formatBacktestDate = (value) => {
+  if (!value) {
+    return "N/A";
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const backtestReturnClass = (value) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "";
+  }
+
+  return Number(value) >= 0
+    ? "positive-value"
+    : "negative-value";
+};
+
+const renderBacktestChart = (result) => {
+  if (
+    !backtestChartElement.value ||
+    !result?.strategies
+  ) {
+    return;
+  }
+
+  const mlCurve = result.strategies.ml?.equity_curve;
+  const buyHoldCurve = result.strategies.buy_and_hold?.equity_curve;
+  const smaCurve = result.strategies.sma?.equity_curve;
+
+  const traces = [];
+
+  if (mlCurve?.dates?.length) {
+    traces.push({
+      x: mlCurve.dates,
+      y: mlCurve.values,
+      type: "scatter",
+      mode: "lines",
+      name: `ML Strategy - ${result.model_name}`,
+      line: {
+        width: 2.5,
+        color: "#2563eb",
+      },
+    });
+  }
+
+  if (buyHoldCurve?.dates?.length) {
+    traces.push({
+      x: buyHoldCurve.dates,
+      y: buyHoldCurve.values,
+      type: "scatter",
+      mode: "lines",
+      name: "Buy & Hold",
+      line: {
+        width: 2,
+        color: "#111827",
+      },
+    });
+  }
+
+  if (smaCurve?.dates?.length) {
+    traces.push({
+      x: smaCurve.dates,
+      y: smaCurve.values,
+      type: "scatter",
+      mode: "lines",
+      name: "SMA 200",
+      line: {
+        width: 2,
+        color: "#f59e0b",
+      },
+    });
+  }
+
+  Plotly.react(
+    backtestChartElement.value,
+    traces,
+    {
+      title: {
+        text: "Backtest Equity Curves",
+        x: 0.02,
+        xanchor: "left",
+      },
+      height: 420,
+      margin: {
+        l: 60,
+        r: 30,
+        t: 60,
+        b: 50,
+      },
+      paper_bgcolor: "white",
+      plot_bgcolor: "white",
+      hovermode: "x unified",
+      xaxis: {
+        type: "date",
+        showgrid: true,
+        gridcolor: "#f3f4f6",
+      },
+      yaxis: {
+        title: "Growth of 1.00",
+        showgrid: true,
+        gridcolor: "#f3f4f6",
+      },
+      legend: {
+        orientation: "h",
+        y: 1.08,
+        x: 0,
+      },
+    },
+    {
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: [
+        "lasso2d",
+        "select2d",
+      ],
+    }
+  );
+};
+
+const loadBacktest = async () => {
+  try {
+    backtestLoading.value = true;
+    backtestError.value = "";
+
+    const response = await getBacktestResults(
+      props.symbol,
+      mlHorizon.value,
+      mlModel.value,
+      5,
+      5,
+      0
+    );
+
+    if (!response || !response.strategies) {
+      throw new Error(
+        "Invalid backtest response."
+      );
+    }
+
+    backtestResult.value = response;
+
+    await nextTick();
+    renderBacktestChart(response);
+
+    console.log(
+      "Backtest Results:",
+      response
+    );
+  } catch (err) {
+    console.error(
+      "Backtest loading failed:",
+      err
+    );
+
+    backtestResult.value = null;
+    backtestError.value =
+      err?.response?.data?.error ||
+      "Unable to run strategy backtest.";
+  } finally {
+    backtestLoading.value = false;
+  }
+};
+
+const loadMLPrediction = async () => {
+  try {
+    mlLoading.value = true;
+    mlError.value = "";
+
+    const response = await getMLReturnPrediction(
+      props.symbol,
+      mlHorizon.value,
+      mlModel.value,
+      mlConfidence.value
+    );
+
+    if (!response || !response.prediction) {
+      throw new Error(
+        "Invalid ML prediction response."
+      );
+    }
+
+    mlPrediction.value = response;
+
+    console.log(
+      "ML Prediction:",
+      response
+    );
+  } catch (err) {
+    console.error(
+      "ML prediction loading failed:",
+      err
+    );
+
+    mlPrediction.value = null;
+    mlError.value =
+      err?.response?.data?.error ||
+      "Unable to generate ML return prediction.";
+  } finally {
+    mlLoading.value = false;
+  }
+};
+
+const changeMLModel = (model) => {
+  if (mlModel.value === model) {
+    return;
+  }
+
+  mlModel.value = model;
+  backtestResult.value = null;
+  backtestError.value = "";
+  loadMLPrediction();
+};
+
+const changeMLHorizon = (horizon) => {
+  if (mlHorizon.value === horizon) {
+    return;
+  }
+
+  mlHorizon.value = horizon;
+  backtestResult.value = null;
+  backtestError.value = "";
+  loadMLPrediction();
+};
+
+const loadPrices = async (includeML = false) => {
   try {
     loading.value =
       true;
@@ -3862,6 +5614,20 @@ const loadPrices = async () => {
     fundamentals.value = [];
     latestFundamental.value = null;
     fundamentalsError.value = "";
+
+    riskMetrics.value = null;
+    riskError.value = "";
+    riskPeriod.value = {
+      startDate: "",
+      endDate: "",
+    };
+
+    if (includeML) {
+      mlPrediction.value = null;
+      mlError.value = "";
+      backtestResult.value = null;
+      backtestError.value = "";
+    }
 
     updateSelectedPeriodLabel();
 
@@ -3933,6 +5699,20 @@ const loadPrices = async () => {
     }
 
     await loadFundamentals();
+
+    if (
+      prices.value.length >
+      1
+    ) {
+      await loadRiskMetrics(
+        startDate,
+        endDate
+      );
+    }
+
+    if (includeML) {
+      await loadMLPrediction();
+    }
   } catch (err) {
     console.error(
       "Failed to load historical prices:",
@@ -3950,6 +5730,14 @@ const loadPrices = async () => {
 
     benchmarkMetrics.value =
       null;
+
+    riskMetrics.value = null;
+    riskError.value =
+      "Unable to load risk metrics.";
+    riskPeriod.value = {
+      startDate: "",
+      endDate: "",
+    };
   } finally {
     loading.value =
       false;
@@ -5578,14 +7366,14 @@ const changePeriod = (
 watch(
   selectedPeriod,
   () => {
-    loadPrices();
+    loadPrices(false);
   }
 );
 
 watch(
   () => props.stockId,
   () => {
-    loadPrices();
+    loadPrices(true);
   }
 );
 
@@ -5596,7 +7384,7 @@ watch(
 onMounted(() => {
   updateSelectedPeriodLabel();
 
-  loadPrices();
+  loadPrices(true);
 });
 
 /* =========================================================
@@ -5615,6 +7403,10 @@ onBeforeUnmount(() => {
     obvChartElement.value,
     adxChartElement.value,
     benchmarkChartElement.value,
+    backtestChartElement.value,
+    riskReturnChartElement.value,
+    riskDrawdownChartElement.value,
+    riskDistributionChartElement.value,
   ];
 
   charts.forEach(
@@ -6035,6 +7827,245 @@ onBeforeUnmount(() => {
 .fundamentals-error { padding: 14px; border-radius: 8px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
 
 /* =========================================================
+   STEP 17.2 - RISK ANALYSIS PANEL
+========================================================= */
+
+.risk-panel {
+  margin: 18px 22px 0;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.risk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.risk-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.risk-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.risk-benchmark-badge {
+  padding: 7px 11px;
+  border-radius: 7px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.risk-period {
+  margin-bottom: 14px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.risk-item {
+  display: flex;
+  min-height: 136px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+.risk-label {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-bottom: 7px;
+}
+
+.risk-item strong {
+  display: block;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.risk-help {
+  display: block;
+  margin-top: 9px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.risk-loading,
+.risk-empty {
+  padding: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.risk-error {
+  padding: 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.risk-note {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* =========================================================
+   STEP 17.3 - RISK VISUALISATION & INTERPRETATION
+========================================================= */
+
+.risk-visual-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.risk-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.risk-section-title {
+  display: block;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.risk-section-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-visual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.risk-visual-card {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: white;
+  overflow: hidden;
+}
+
+.risk-distribution-card {
+  grid-column: 1 / -1;
+}
+
+.risk-visual-card-header {
+  padding: 14px 14px 0;
+}
+
+.risk-visual-card-title {
+  display: block;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.risk-visual-card-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.risk-return-chart,
+.risk-drawdown-chart,
+.risk-distribution-chart {
+  width: 100%;
+  height: 330px;
+}
+
+.risk-interpretation-panel {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.risk-interpretation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.risk-interpretation-item {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+.risk-interpretation-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-interpretation-item p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.risk-interpretation-note {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* =========================================================
    CHARTS
 ========================================================= */
 
@@ -6107,7 +8138,8 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .regime-grid,
   .performance-grid,
-  .fundamentals-grid {
+  .fundamentals-grid,
+  .risk-grid {
     grid-template-columns: repeat(
       2,
       1fr
@@ -6124,14 +8156,16 @@ onBeforeUnmount(() => {
   .regime-header,
   .performance-header,
   .benchmark-header,
-  .fundamentals-header {
+  .fundamentals-header,
+  .risk-header {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .regime-grid,
   .performance-grid,
-  .fundamentals-grid {
+  .fundamentals-grid,
+  .risk-grid {
     grid-template-columns: 1fr;
   }
 
@@ -6183,10 +8217,418 @@ onBeforeUnmount(() => {
     height: 320px;
   }
 
+  .risk-visual-grid,
+  .risk-interpretation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-distribution-card {
+    grid-column: auto;
+  }
+
+  .risk-return-chart,
+  .risk-drawdown-chart,
+  .risk-distribution-chart {
+    height: 300px;
+  }
+
   .benchmark-table th,
   .benchmark-table td {
     padding: 9px 10px;
     font-size: 12px;
   }
 }
+
+
+/* =========================================================
+   STEP 19.3 - BACKTEST VISUALISATION
+========================================================= */
+
+.backtest-panel {
+  margin: 18px 22px 0;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.backtest-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.backtest-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.backtest-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.backtest-run-button {
+  border: 1px solid #111827;
+  background: #111827;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.backtest-run-button:hover:not(:disabled) {
+  background: #374151;
+}
+
+.backtest-run-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.backtest-configuration {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.backtest-configuration strong {
+  color: #111827;
+}
+
+.backtest-period {
+  margin-bottom: 14px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.backtest-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.backtest-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.backtest-table th,
+.backtest-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: right;
+  font-size: 12px;
+}
+
+.backtest-table th:first-child,
+.backtest-table td:first-child {
+  text-align: left;
+}
+
+.backtest-table th {
+  background: #f3f4f6;
+  color: #374151;
+  font-weight: 700;
+}
+
+.backtest-table td {
+  color: #111827;
+}
+
+.backtest-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.backtest-chart {
+  width: 100%;
+  height: 420px;
+  margin-top: 16px;
+}
+
+.backtest-notes {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.backtest-loading,
+.backtest-empty {
+  padding: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.backtest-error {
+  padding: 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* =========================================================
+   STEP 18.7 - ML RETURN PREDICTION DASHBOARD
+========================================================= */
+
+.ml-prediction-panel {
+  margin: 18px 22px 0;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.ml-prediction-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.ml-prediction-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.ml-prediction-subtitle {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ml-prediction-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.ml-control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ml-control-label {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ml-control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ml-control-buttons button {
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+  padding: 6px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.ml-control-buttons button:hover {
+  background: #f3f4f6;
+}
+
+.ml-control-buttons button.active {
+  background: #111827;
+  border-color: #111827;
+  color: white;
+}
+
+.ml-prediction-period {
+  margin-bottom: 14px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ml-prediction-main-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ml-prediction-primary-card {
+  min-height: 128px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: white;
+}
+
+.ml-card-label {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.ml-prediction-primary-card strong {
+  display: block;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.ml-primary-value.positive-value {
+  color: #15803d;
+}
+
+.ml-primary-value.negative-value {
+  color: #b91c1c;
+}
+
+.ml-range-value {
+  font-size: 20px !important;
+}
+
+.ml-card-help {
+  display: block;
+  margin-top: 10px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ml-prediction-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ml-prediction-item {
+  padding: 13px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+.ml-prediction-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ml-prediction-item strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+}
+
+.ml-prediction-note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ml-prediction-loading,
+.ml-prediction-empty {
+  padding: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.ml-prediction-error {
+  padding: 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* STEP 18.7 RESPONSIVE */
+@media (max-width: 900px) {
+  .backtest-header {
+    flex-direction: column;
+  }
+
+  .backtest-run-button {
+    width: 100%;
+  }
+
+  .backtest-chart {
+    height: 340px;
+  }
+
+  .ml-prediction-header {
+    flex-direction: column;
+  }
+
+  .ml-prediction-controls {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .ml-prediction-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ml-prediction-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ml-control-group {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) {
+  .ml-prediction-panel {
+    margin-left: 12px;
+    margin-right: 12px;
+    padding: 14px;
+  }
+
+  .ml-prediction-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>

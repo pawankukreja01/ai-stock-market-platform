@@ -10,22 +10,50 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR.parent / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-p%rd(%+74qxy!u3b%_6zpt31@$b7wntbqau&m1r6#w4*o&q7wl'
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "").strip()
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get(
+    "DJANGO_DEBUG", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,[::1]" if DEBUG else "",
+    ).split(",")
+    if host.strip()
+]
+
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-local-development-only-do-not-deploy"
+    else:
+        raise RuntimeError(
+            "Set DJANGO_SECRET_KEY before running with DJANGO_DEBUG=false."
+        )
+
+if not DEBUG and not ALLOWED_HOSTS:
+    raise RuntimeError(
+        "Set DJANGO_ALLOWED_HOSTS before running with DJANGO_DEBUG=false."
+    )
+
 
 
 # Application definition
@@ -41,6 +69,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "stocks",
     "market_data",
+    "portfolios",
+    "alerts",
 ]
 
 MIDDLEWARE = [
@@ -79,11 +109,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "ai_stock_market",
-        "USER": "pawankukreja",
-        "PASSWORD": "",
-        "HOST": "localhost",
-        "PORT": "5432",
+        "NAME": os.environ.get("DB_NAME", "ai_stock_market"),
+        "USER": os.environ.get("DB_USER", os.environ.get("USER", "postgres")),
+        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
     }
 }
 
