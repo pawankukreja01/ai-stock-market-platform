@@ -39,7 +39,7 @@ def calculate_returns(
     )
 
     result["return_1d"] = (
-        prices.pct_change(1)
+        prices.pct_change(1, fill_method=None)
     )
 
     for period in periods:
@@ -48,7 +48,7 @@ def calculate_returns(
 
         result[
             f"return_{period}d"
-        ] = prices.pct_change(period)
+        ] = prices.pct_change(period, fill_method=None)
 
     return result
 
@@ -281,6 +281,28 @@ def build_stock_features(
     low = df["low_price"]
     volume = df["volume"]
 
+    # Reject invalid candle prices before calculating features.
+    valid_feature_price_rows = (
+        np.isfinite(close)
+        & np.isfinite(high)
+        & np.isfinite(low)
+        & close.gt(0)
+        & high.gt(0)
+        & low.gt(0)
+        & high.ge(low)
+        & high.ge(close)
+        & low.le(close)
+    )
+
+    # Invalid close prices must not contaminate rolling calculations
+    # or returns on later dates.
+    close = close.where(valid_feature_price_rows)
+    high = high.where(valid_feature_price_rows)
+    low = low.where(valid_feature_price_rows)
+
+    # Volume must also be finite and non-negative.
+    volume = volume.where(np.isfinite(volume) & volume.ge(0))
+
     # ---------------------------------------------------------
     # Returns
     # ---------------------------------------------------------
@@ -355,7 +377,8 @@ def build_stock_features(
             ),
             "roc_12": (
                 close.pct_change(
-                    12
+                    12,
+                    fill_method=None,
                 )
             ),
         },
@@ -366,7 +389,7 @@ def build_stock_features(
     # Volatility
     # ---------------------------------------------------------
 
-    daily_returns = close.pct_change()
+    daily_returns = close.pct_change(fill_method=None)
 
     volatility_features = pd.DataFrame(
         {
@@ -402,7 +425,7 @@ def build_stock_features(
     volume_features = pd.DataFrame(
         {
             "volume_change_1d": (
-                volume.pct_change()
+                volume.pct_change(fill_method=None)
             ),
             "relative_volume_20d": (
                 calculate_relative_volume(
@@ -483,6 +506,22 @@ def build_stock_features(
                         benchmark_return_20d
                     )
 
+                    # Stock performance in excess of its market benchmark.
+                    # All values use data available through the same date only.
+                    for period in (1, 5, 20, 60):
+                        stock_return = close.pct_change(
+                            periods=period,
+                            fill_method=None,
+                        )
+                        market_return = aligned_benchmark.pct_change(
+                            periods=period,
+                            fill_method=None,
+                        )
+                        if stock_return.notna().any() and market_return.notna().any():
+                            benchmark_features[f"relative_return_{period}d"] = (
+                                stock_return - market_return
+                            )
+
     # ---------------------------------------------------------
     # Combine features
     # ---------------------------------------------------------
@@ -515,12 +554,25 @@ def build_stock_features(
         126,
         252,
     ]:
-        features[
-            f"target_{horizon}d"
-        ] = (
+        target = (
             close.shift(-horizon)
             / close
         ) - 1
+
+        # Require every close from the origin through the future
+        # endpoint to be valid for this horizon.
+        valid_path = (
+            valid_feature_price_rows.astype("int64")
+            .rolling(window=horizon + 1, min_periods=horizon + 1)
+            .sum()
+            .shift(-horizon)
+            .eq(horizon + 1)
+        )
+
+        features[f"target_{horizon}d"] = target.where(valid_path)
+
+    # An invalid candle cannot be used as a model input row.
+    features.loc[~valid_feature_price_rows, :] = np.nan
 
     return features
 
@@ -580,3 +632,54 @@ def prepare_training_dataset(
         dataset[feature_columns],
         dataset[target_column],
     )
+
+
+def prepare_latest_feature_row(
+    prices,
+    benchmark_prices=None,
+):
+    """
+    Build the latest complete feature row for a current forecast.
+
+    Unlike the supervised training dataset, this row does not need
+    a known future target. It must, however, contain every feature
+    required by the model; incomplete latest features raise an error
+    instead of silently falling back to an older date.
+    """
+    features = build_stock_features(
+        prices,
+        benchmark_prices=benchmark_prices,
+    )
+
+    if features.empty:
+        raise ValueError(
+            "Unable to build features from the supplied price history."
+        )
+
+    feature_columns = [
+        column
+        for column in features.columns
+        if not column.startswith("target_")
+    ]
+
+    if not feature_columns:
+        raise ValueError("No model features were generated.")
+
+    latest = (
+        features[feature_columns]
+        .replace([np.inf, -np.inf], np.nan)
+        .iloc[[-1]]
+        .copy()
+    )
+
+    missing_columns = latest.columns[
+        latest.isna().iloc[0]
+    ].tolist()
+
+    if missing_columns:
+        raise ValueError(
+            "The latest observation is missing usable feature values: "
+            + ", ".join(missing_columns)
+        )
+
+    return latest
