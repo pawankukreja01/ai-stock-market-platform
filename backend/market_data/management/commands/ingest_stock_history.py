@@ -70,6 +70,30 @@ class Command(BaseCommand):
                 f"No historical data returned for {symbol}."
             )
 
+        
+        # Currency is optional metadata. Never infer it from the exchange.
+        try:
+            ticker_info = ticker.info
+            raw_currency = (
+                ticker_info.get("currency")
+                if isinstance(ticker_info, dict)
+                else None
+            )
+        except Exception:
+            raw_currency = None
+
+        if (
+            isinstance(raw_currency, str)
+            and len(raw_currency.strip()) == 3
+            and raw_currency.strip().isalpha()
+        ):
+            verified_currency = raw_currency.strip().upper()
+            Stock.objects.filter(pk=stock.pk).update(
+                currency=verified_currency
+            )
+            stock.currency = verified_currency
+
+
         records_created = 0
         records_updated = 0
         records_skipped_invalid = 0

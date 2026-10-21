@@ -20,6 +20,7 @@ from .backtesting_views import (
 from .news_views import NewsArticleListView
 
 from .sentiment_views import StockSentimentSummaryView
+from .recommendation_views import StockRecommendationsView
 
 urlpatterns = [
     path(
@@ -81,4 +82,9 @@ urlpatterns = [
     InvestmentSimulatorView.as_view(),
     name="investment-simulator",
 ),
+    path(
+        "recommendations/",
+        StockRecommendationsView.as_view(),
+        name="stock-recommendations",
+    ),
 ]
