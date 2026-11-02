@@ -80,59 +80,78 @@ def calculate_ema(
     ).mean()
 
 
+
 def calculate_rsi(
     prices,
     period=14,
 ):
     """
     Wilder-style RSI calculation.
+
+    Handles edge cases explicitly:
+    - No losses and positive gains: RSI = 100
+    - No gains and positive losses: RSI = 0
+    - No gains and no losses: RSI = 50
+
+    Missing or insufficient observations remain NaN.
     """
     delta = prices.diff()
 
-    gain = delta.clip(
-        lower=0
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    average_gain = gain.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    average_loss = loss.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
+    # Calculate relative strength where average loss is positive.
+    relative_strength = average_gain.div(
+        average_loss.where(average_loss.gt(0))
     )
 
-    loss = -delta.clip(
-        upper=0
+    rsi = 100 - (100 / (1 + relative_strength))
+
+    valid_averages = (
+        average_gain.notna()
+        & average_loss.notna()
     )
 
-    average_gain = (
-        gain.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
+    # No losses: maximum RSI.
+    no_losses = (
+        valid_averages
+        & average_loss.eq(0)
+        & average_gain.gt(0)
     )
 
-    average_loss = (
-        loss.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
+    rsi = rsi.mask(no_losses, 100.0)
+
+    # No gains: minimum RSI.
+    no_gains = (
+        valid_averages
+        & average_gain.eq(0)
+        & average_loss.gt(0)
     )
 
-    relative_strength = (
-        average_gain
-        / average_loss.replace(
-            0,
-            np.nan,
-        )
+    rsi = rsi.mask(no_gains, 0.0)
+
+    # Completely unchanged prices: neutral RSI.
+    no_movement = (
+        valid_averages
+        & average_gain.eq(0)
+        & average_loss.eq(0)
     )
 
-    rsi = (
-        100
-        - (
-            100
-            / (
-                1
-                + relative_strength
-            )
-        )
-    )
+    rsi = rsi.mask(no_movement, 50.0)
 
-    return rsi
+    return rsi.clip(lower=0, upper=100)
 
 
 def calculate_rolling_volatility(
@@ -254,34 +273,38 @@ def build_stock_features(
     if missing_columns:
         raise ValueError(
             "Missing required columns: "
-            + ", ".join(
-                missing_columns
-            )
+            + ", ".join(missing_columns)
         )
 
-    df = df.sort_values(
-        "date"
-    ).copy()
-
-    df["date"] = pd.to_datetime(
-        df["date"]
-    )
-
-    df = df.set_index(
-        "date"
-    )
+    df = df.sort_values("date").copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.set_index("date")
 
     for column in required_columns:
-        df[column] = _clean_numeric(
-            df[column]
-        )
+        df[column] = _clean_numeric(df[column])
+
+    # Open is optional for backwards compatibility with older DataFrame
+    # callers. When supplied, it is part of OHLC candle validation.
+    open_price = None
+    if "open_price" in df.columns:
+        df["open_price"] = _clean_numeric(df["open_price"])
+        open_price = df["open_price"]
 
     close = df["close_price"]
     high = df["high_price"]
     low = df["low_price"]
     volume = df["volume"]
 
-    # Reject invalid candle prices before calculating features.
+    def quality_flag_mask(column):
+        """Treat absent flags as legacy/unknown; treat null/false as invalid."""
+        if column not in df.columns:
+            return pd.Series(True, index=df.index, dtype=bool)
+        accepted = {"true", "1", "yes", "y", "t"}
+        return df[column].map(
+            lambda value: str(value).strip().lower() in accepted
+        ).astype(bool)
+
+    # Reject invalid candle prices before calculating price-based features.
     valid_feature_price_rows = (
         np.isfinite(close)
         & np.isfinite(high)
@@ -292,16 +315,33 @@ def build_stock_features(
         & high.ge(low)
         & high.ge(close)
         & low.le(close)
+        & quality_flag_mask("is_ohlc_valid")
     )
 
-    # Invalid close prices must not contaminate rolling calculations
-    # or returns on later dates.
+    # When Open is available, it must be finite, positive and inside the
+    # candle's high/low range. A missing Open therefore invalidates that row.
+    if open_price is not None:
+        valid_feature_price_rows &= (
+            np.isfinite(open_price)
+            & open_price.gt(0)
+            & high.ge(open_price)
+            & low.le(open_price)
+        )
+
+    # Invalid OHLC rows must not contaminate rolling price calculations,
+    # returns, ATR values or future-return target paths.
     close = close.where(valid_feature_price_rows)
     high = high.where(valid_feature_price_rows)
     low = low.where(valid_feature_price_rows)
 
-    # Volume must also be finite and non-negative.
-    volume = volume.where(np.isfinite(volume) & volume.ge(0))
+    # Invalid volume affects volume-derived features, but does not invalidate
+    # an otherwise valid OHLC observation or its close-based features.
+    valid_feature_volume_rows = (
+        np.isfinite(volume)
+        & volume.ge(0)
+        & quality_flag_mask("is_volume_valid")
+    )
+    volume = volume.where(valid_feature_volume_rows)
 
     # ---------------------------------------------------------
     # Returns

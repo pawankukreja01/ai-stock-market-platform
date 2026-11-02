@@ -27,6 +27,11 @@ class HistoricalPriceSerializer(
             "close_price",
             "adjusted_close",
             "volume",
+            "provider_currency",
+            "storage_currency",
+            "is_ohlc_valid",
+            "is_volume_valid",
+            "quality_flags",
         ]
 
 

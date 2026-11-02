@@ -627,9 +627,18 @@
         </div>
 
         <div
+          v-if="benchmarkChartHasData && !benchmarkChartRenderError"
           ref="benchmarkChartElement"
           class="benchmark-chart"
+          role="img"
+          :aria-label="`Historical performance comparison for ${symbol} and available benchmarks`"
         ></div>
+        <p v-else class="benchmark-chart-empty">
+          {{
+            benchmarkChartRenderError ||
+            "Historical chart data is unavailable for this period. The comparison table remains available."
+          }}
+        </p>
 
         <div class="benchmark-description">
           {{ benchmarkMetrics.description }}
@@ -1576,6 +1585,34 @@ const performanceMetrics = ref(null);
 const benchmarkMetrics = ref(null);
 const benchmarkLoading = ref(false);
 const benchmarkError = ref("");
+
+// Render the historical comparison chart only when at least one usable series exists.
+const benchmarkChartRenderError = ref("");
+
+const hasUsableBenchmarkSeries = (series) => {
+  if (
+    !Array.isArray(series?.dates) ||
+    !Array.isArray(series?.values) ||
+    series.dates.length < 2 ||
+    series.dates.length !== series.values.length
+  ) {
+    return false;
+  }
+
+  return series.values.some((value) => Number.isFinite(Number(value)));
+};
+
+const benchmarkChartHasData = computed(() => {
+  const metrics = benchmarkMetrics.value;
+  if (!metrics) return false;
+
+  return [
+    metrics.stockNormalized,
+    metrics.sp500?.normalized,
+    metrics.nasdaq100?.normalized,
+    metrics.sector?.normalized,
+  ].some(hasUsableBenchmarkSeries);
+});
 
 /* =========================================================
    STEP 16 - FUNDAMENTALS
@@ -3948,6 +3985,7 @@ const loadBenchmarkData = async (
     benchmarkError.value =
       "";
 
+    benchmarkChartRenderError.value = "";
     benchmarkMetrics.value =
       null;
 
@@ -4090,7 +4128,9 @@ const loadBenchmarkData = async (
 
     await nextTick();
 
-    renderBenchmarkChart();
+    if (benchmarkChartHasData.value) {
+      await renderBenchmarkChart();
+    }
 
     console.log(
       "Benchmark Metrics:",
@@ -4121,13 +4161,16 @@ const loadBenchmarkData = async (
    BENCHMARK CHART
 ========================================================= */
 
-const renderBenchmarkChart = () => {
+const renderBenchmarkChart = async () => {
   if (
     !benchmarkChartElement.value ||
-    !benchmarkMetrics.value
+    !benchmarkMetrics.value ||
+    !benchmarkChartHasData.value
   ) {
     return;
   }
+
+  benchmarkChartRenderError.value = "";
 
   const stock =
     benchmarkMetrics.value
@@ -4245,13 +4288,13 @@ const renderBenchmarkChart = () => {
       xanchor: "left",
     },
 
-    height: 400,
+    height: 250,
 
     margin: {
-      l: 70,
-      r: 30,
-      t: 60,
-      b: 50,
+      l: 62,
+      r: 20,
+      t: 48,
+      b: 42,
     },
 
     paper_bgcolor:
@@ -4309,12 +4352,28 @@ const renderBenchmarkChart = () => {
     ],
   };
 
-  Plotly.react(
-    benchmarkChartElement.value,
-    traces,
-    layout,
-    chartConfig
-  );
+  if (traces.length === 0) {
+    benchmarkChartRenderError.value =
+      "Historical chart data is unavailable for this period. The comparison table remains available.";
+    return;
+  }
+
+  try {
+    await Plotly.react(
+      benchmarkChartElement.value,
+      traces,
+      layout,
+      chartConfig
+    );
+
+    if (benchmarkChartElement.value) {
+      Plotly.Plots.resize(benchmarkChartElement.value);
+    }
+  } catch (error) {
+    console.error("Benchmark chart rendering failed:", error);
+    benchmarkChartRenderError.value =
+      "The historical comparison chart could not be rendered. The comparison table remains available.";
+  }
 };
 
 /* =========================================================
@@ -7692,7 +7751,7 @@ onBeforeUnmount(() => {
 
 .benchmark-panel {
   margin: 18px 22px 0;
-  padding: 18px;
+  padding: 16px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #f9fafb;
@@ -7777,9 +7836,23 @@ onBeforeUnmount(() => {
 }
 
 .benchmark-chart {
+  display: block;
   width: 100%;
-  height: 400px;
-  margin-top: 18px;
+  min-width: 0;
+  height: 250px;
+  min-height: 220px;
+  margin-top: 8px;
+}
+
+.benchmark-chart-empty {
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .benchmark-description {
@@ -8214,7 +8287,8 @@ onBeforeUnmount(() => {
   }
 
   .benchmark-chart {
-    height: 320px;
+    height: 240px;
+    min-height: 220px;
   }
 
   .risk-visual-grid,

@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.db.models import OuterRef, Subquery
 
 from stocks.models import Stock
@@ -8,15 +10,21 @@ def get_recommendation_candidates(
     *,
     market=None,
     max_candidates=20,
+    as_of=None,
 ):
     """
     Retrieve active stocks with their latest stored closing price.
 
     Missing prices remain None; this function does not rank stocks.
     """
+    as_of = as_of or date.today()
     latest_price = (
         HistoricalPrice.objects
-        .filter(stock_id=OuterRef("pk"))
+        .filter(
+            stock_id=OuterRef("pk"),
+            date__lte=as_of,
+            close_price__gt=0,
+        )
         .order_by("-date", "-id")
     )
 

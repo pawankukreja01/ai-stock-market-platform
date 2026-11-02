@@ -19,7 +19,10 @@ def get_observed_value(rule):
     }:
         return (
             HistoricalPrice.objects
-            .filter(stock_id=rule.stock_id)
+            .filter(
+                stock_id=rule.stock_id,
+                close_price__gt=0,
+            )
             .order_by("-date")
             .values_list("close_price", flat=True)
             .first()

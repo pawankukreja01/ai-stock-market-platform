@@ -59,6 +59,7 @@ def run_cost_slippage_sensitivity(
     selected_slippage_bps=5.0,
     prediction_threshold=0.0,
     sma_period=200,
+    holding_period=1,
     cost_levels_bps=None,
     slippage_levels_bps=None,
 ):
@@ -111,6 +112,7 @@ def run_cost_slippage_sensitivity(
             slippage_bps=slippage_bps,
             sma_period=sma_period,
             prediction_threshold=prediction_threshold,
+            holding_period=holding_period,
         )
 
         strategies = {
@@ -178,7 +180,7 @@ def run_cost_slippage_sensitivity(
     )
 
     return {
-        "method": "Fixed walk-forward predictions; strategy costs and slippage are varied per scenario.",
+        "method": "Fixed walk-forward predictions with non-overlapping horizon-matched holding blocks; strategy costs and slippage are varied per scenario.",
         "units": {
             "basis_points": "100 bps = 1 percentage point",
             "returns": "decimal ratios; for example, 0.05 = 5%",
@@ -192,6 +194,7 @@ def run_cost_slippage_sensitivity(
             "transaction_cost_bps": selected_transaction_cost_bps,
             "slippage_bps": selected_slippage_bps,
             "combined_friction_bps": selected_transaction_cost_bps + selected_slippage_bps,
+            "holding_period_trading_days": int(holding_period),
             "scenario_id": selected_scenario["scenario_id"] if selected_scenario else None,
         },
         "summary": {

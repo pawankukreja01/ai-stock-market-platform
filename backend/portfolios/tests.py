@@ -12,50 +12,40 @@ from portfolios.models import Portfolio, PortfolioHolding
 class PortfolioAPITests(TestCase):
     def setUp(self):
         self.client = APIClient()
-
         self.stock = Stock.objects.create(
             symbol="AAPL",
             company_name="Apple Inc.",
             exchange="NASDAQ",
+            currency="USD",
             sector="Technology",
             industry="Consumer Electronics",
             is_active=True,
         )
-
         self.portfolio = Portfolio.objects.create(
             name="Test Portfolio",
             description="Portfolio API test",
         )
+        self.base_date = date(2026, 9, 1)
+        self.create_price_history(self.stock)
 
-        # Create deterministic synthetic prices for valuation
-        # and risk tests. These are not real market observations.
-        base_date = date(2026, 9, 1)
-
-        price_records = []
-
+    def create_price_history(self, stock, start=Decimal("100.0000")):
+        rows = []
         for index in range(35):
-            price = Decimal("100.0000") + Decimal(index)
+            price = start + Decimal(index)
+            rows.append(HistoricalPrice(
+                stock=stock,
+                date=self.base_date + timedelta(days=index),
+                open_price=price,
+                high_price=price + Decimal("1.0000"),
+                low_price=price - Decimal("1.0000"),
+                close_price=price,
+                adjusted_close=price,
+                volume=1000000,
+                storage_currency=stock.currency,
+            ))
+        HistoricalPrice.objects.bulk_create(rows)
 
-            price_records.append(
-                HistoricalPrice(
-                    stock=self.stock,
-                    date=base_date + timedelta(days=index),
-                    open_price=price,
-                    high_price=price + Decimal("1.0000"),
-                    low_price=price - Decimal("1.0000"),
-                    close_price=price,
-                    adjusted_close=price,
-                    volume=1000000,
-                )
-            )
-
-        HistoricalPrice.objects.bulk_create(price_records)
-
-    def add_holding(
-        self,
-        quantity="3",
-        purchase_price="100.00",
-    ):
+    def add_holding(self, quantity="3", purchase_price="100.00"):
         return self.client.post(
             f"/api/portfolios/{self.portfolio.id}/holdings/",
             {
@@ -70,172 +60,174 @@ class PortfolioAPITests(TestCase):
     def test_create_portfolio(self):
         response = self.client.post(
             "/api/portfolios/",
-            {
-                "name": "Long-term Portfolio",
-                "description": "Long-term investment test",
-            },
+            {"name": "Long-term Portfolio", "description": "Long-term investment test"},
             format="json",
         )
-
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(
-            response.data["name"],
-            "Long-term Portfolio",
-        )
+        self.assertEqual(response.data["name"], "Long-term Portfolio")
         self.assertEqual(response.data["summary"]["holdings_count"], 0)
 
     def test_add_holding_and_calculate_valuation(self):
-        response = self.add_holding(
-            quantity="3",
-            purchase_price="100.00",
-        )
-
+        response = self.add_holding(quantity="3", purchase_price="100.00")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["stock_symbol"], "AAPL")
-
-        # The last synthetic price is 134.00.
-        self.assertAlmostEqual(
-            response.data["current_price"],
-            134.00,
-        )
-        self.assertAlmostEqual(
-            response.data["cost_basis"],
-            300.00,
-        )
-        self.assertAlmostEqual(
-            response.data["current_value"],
-            402.00,
-        )
-        self.assertAlmostEqual(
-            response.data["unrealized_profit_loss"],
-            102.00,
-        )
-        self.assertAlmostEqual(
-            response.data["unrealized_return_pct"],
-            34.00,
-        )
+        self.assertEqual(response.data["currency"], "USD")
+        self.assertAlmostEqual(response.data["current_price"], 134.00)
+        self.assertAlmostEqual(response.data["cost_basis"], 300.00)
+        self.assertAlmostEqual(response.data["current_value"], 402.00)
+        self.assertAlmostEqual(response.data["unrealized_profit_loss"], 102.00)
+        self.assertAlmostEqual(response.data["unrealized_return_pct"], 34.00)
         self.assertAlmostEqual(response.data["weight_pct"], 100.00)
 
-    def test_portfolio_detail_includes_summary(self):
-        self.add_holding(
-            quantity="3",
-            purchase_price="100.00",
+    def test_valuation_ignores_non_positive_latest_close(self):
+        HistoricalPrice.objects.create(
+            stock=self.stock,
+            date=date(2026, 10, 6),
+            open_price=Decimal("0.0000"),
+            high_price=Decimal("0.0000"),
+            low_price=Decimal("0.0000"),
+            close_price=Decimal("0.0000"),
+            adjusted_close=Decimal("0.0000"),
+            volume=0,
+            storage_currency="USD",
+            is_ohlc_valid=False,
+            is_volume_valid=True,
+            quality_flags={"ohlc": "non_positive_close"},
         )
+        response = self.add_holding(quantity="3", purchase_price="100.00")
+        self.assertEqual(response.status_code, 201)
+        self.assertAlmostEqual(response.data["current_price"], 134.00)
+        self.assertEqual(response.data["current_price_date"], date(2026, 10, 5))
 
-        response = self.client.get(
-            f"/api/portfolios/{self.portfolio.id}/"
-        )
+    def test_portfolio_risk_preserves_adjusted_close_gap(self):
+        HistoricalPrice.objects.filter(
+            stock=self.stock,
+            date=date(2026, 9, 18),
+        ).update(adjusted_close=Decimal("0.0000"))
+        self.add_holding(quantity="3", purchase_price="100.00")
+        response = self.client.get(f"/api/portfolios/{self.portfolio.id}/analysis/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["risk"]["available"])
+        self.assertEqual(response.data["risk"]["observations"], 32)
 
+    def test_portfolio_detail_includes_currency_summary(self):
+        self.add_holding(quantity="3", purchase_price="100.00")
+        response = self.client.get(f"/api/portfolios/{self.portfolio.id}/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["holdings"]), 1)
-
         summary = response.data["summary"]
-
         self.assertEqual(summary["holdings_count"], 1)
         self.assertEqual(summary["priced_holdings"], 1)
         self.assertEqual(summary["unpriced_holdings"], 0)
-
+        self.assertEqual(summary["currency"], "USD")
+        self.assertFalse(summary["mixed_currencies"])
         self.assertAlmostEqual(summary["total_cost_basis"], 300.00)
         self.assertAlmostEqual(summary["market_value"], 402.00)
-        self.assertAlmostEqual(
-            summary["unrealized_profit_loss"],
-            102.00,
+        self.assertAlmostEqual(summary["unrealized_profit_loss"], 102.00)
+        self.assertEqual(len(summary["currency_breakdown"]), 1)
+
+    def test_mixed_currency_portfolio_never_adds_currency_amounts(self):
+        self.add_holding(quantity="3", purchase_price="100.00")
+        vod = Stock.objects.create(
+            symbol="VOD.L",
+            company_name="Vodafone Group Plc",
+            exchange="LSE",
+            currency="GBP",
+            sector="Communication Services",
+            industry="Telecom Services",
+            is_active=True,
         )
+        self.create_price_history(vod)
+        PortfolioHolding.objects.create(
+            portfolio=self.portfolio,
+            stock=vod,
+            quantity=Decimal("2"),
+            purchase_price=Decimal("100.00"),
+            purchase_date=self.base_date,
+        )
+
+        detail = self.client.get(f"/api/portfolios/{self.portfolio.id}/")
+        self.assertEqual(detail.status_code, 200)
+        summary = detail.data["summary"]
+        self.assertTrue(summary["mixed_currencies"])
+        self.assertEqual(summary["currencies"], ["GBP", "USD"])
+        self.assertIsNone(summary["market_value"])
+        self.assertIsNone(summary["total_cost_basis"])
+        self.assertEqual(len(summary["currency_breakdown"]), 2)
+        by_currency = {item["currency"]: item for item in summary["currency_breakdown"]}
+        self.assertAlmostEqual(by_currency["USD"]["market_value"], 402.00)
+        self.assertAlmostEqual(by_currency["GBP"]["market_value"], 268.00)
+
+    def test_mixed_currency_risk_is_reported_separately(self):
+        self.add_holding()
+        vod = Stock.objects.create(
+            symbol="VOD.L",
+            company_name="Vodafone Group Plc",
+            exchange="LSE",
+            currency="GBP",
+            sector="Communication Services",
+            industry="Telecom Services",
+            is_active=True,
+        )
+        self.create_price_history(vod)
+        PortfolioHolding.objects.create(
+            portfolio=self.portfolio,
+            stock=vod,
+            quantity=Decimal("2"),
+            purchase_price=Decimal("100.00"),
+            purchase_date=self.base_date,
+        )
+
+        response = self.client.get(f"/api/portfolios/{self.portfolio.id}/analysis/")
+        self.assertEqual(response.status_code, 200)
+        risk = response.data["risk"]
+        self.assertFalse(risk["available"])
+        self.assertEqual([item["currency"] for item in risk["by_currency"]], ["GBP", "USD"])
+        self.assertTrue(all(item["available"] for item in risk["by_currency"]))
 
     def test_duplicate_stock_cannot_be_added_twice(self):
         first_response = self.add_holding()
-
         self.assertEqual(first_response.status_code, 201)
-
-        second_response = self.add_holding(
-            quantity="5",
-            purchase_price="110.00",
-        )
-
+        second_response = self.add_holding(quantity="5", purchase_price="110.00")
         self.assertEqual(second_response.status_code, 400)
-        self.assertEqual(
-            PortfolioHolding.objects.filter(
-                portfolio=self.portfolio,
-                stock=self.stock,
-            ).count(),
-            1,
-        )
+        self.assertEqual(PortfolioHolding.objects.filter(portfolio=self.portfolio, stock=self.stock).count(), 1)
 
     def test_holding_can_be_updated(self):
         create_response = self.add_holding()
-
         self.assertEqual(create_response.status_code, 201)
-
         holding_id = create_response.data["id"]
-
         update_response = self.client.patch(
-            (
-                f"/api/portfolios/{self.portfolio.id}/"
-                f"holdings/{holding_id}/"
-            ),
-            {
-                "quantity": "5",
-                "purchase_price": "110.00",
-            },
+            f"/api/portfolios/{self.portfolio.id}/holdings/{holding_id}/",
+            {"quantity": "5", "purchase_price": "110.00"},
             format="json",
         )
-
         self.assertEqual(update_response.status_code, 200)
-        self.assertEqual(
-            Decimal(update_response.data["quantity"]),
-            Decimal("5"),
-        )
-        self.assertEqual(
-            Decimal(update_response.data["purchase_price"]),
-            Decimal("110.00"),
-        )
+        self.assertEqual(Decimal(update_response.data["quantity"]), Decimal("5"))
+        self.assertEqual(Decimal(update_response.data["purchase_price"]), Decimal("110.00"))
 
     def test_holding_can_be_removed(self):
         create_response = self.add_holding()
-
         holding_id = create_response.data["id"]
-
         delete_response = self.client.delete(
-            (
-                f"/api/portfolios/{self.portfolio.id}/"
-                f"holdings/{holding_id}/"
-            )
+            f"/api/portfolios/{self.portfolio.id}/holdings/{holding_id}/"
         )
-
         self.assertEqual(delete_response.status_code, 204)
-        self.assertFalse(
-            PortfolioHolding.objects.filter(
-                pk=holding_id
-            ).exists()
-        )
+        self.assertFalse(PortfolioHolding.objects.filter(pk=holding_id).exists())
 
     def test_portfolio_risk_analysis_returns_metrics(self):
-        self.add_holding(
-            quantity="3",
-            purchase_price="100.00",
-        )
-
-        response = self.client.get(
-            f"/api/portfolios/{self.portfolio.id}/analysis/"
-        )
-
+        self.add_holding(quantity="3", purchase_price="100.00")
+        response = self.client.get(f"/api/portfolios/{self.portfolio.id}/analysis/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["risk"]["available"])
-
         risk = response.data["risk"]
-
         self.assertIn("annualized_volatility_pct", risk)
         self.assertIn("max_drawdown_pct", risk)
         self.assertIn("period_return_pct", risk)
         self.assertIn("annualized_return_pct", risk)
-
         self.assertEqual(risk["included_symbols"], ["AAPL"])
         self.assertGreater(risk["observations"], 20)
 
     def test_empty_portfolio_reports_risk_unavailable(self):
-        response = self.client.get(
-            f"/api/portfolios/{self.portfolio.id}/analysis/"
-        )
-
+        response = self.client.get(f"/api/portfolios/{self.portfolio.id}/analysis/")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["risk"]["available"])

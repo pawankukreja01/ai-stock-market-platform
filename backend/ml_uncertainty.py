@@ -6,17 +6,14 @@ def chronological_three_way_split(
     y,
     train_size=0.70,
     calibration_size=0.15,
+    horizon=0,
 ):
     """
-    Chronologically split data into:
+    Chronologically split data into training, calibration and test sets.
 
-        Training
-        Calibration
-        Test
-
-    No shuffling is performed.
+    A gap equal to the forecast horizon is omitted at each boundary
+    so future-return targets do not overlap between adjacent sets.
     """
-
     if len(X) != len(y):
         raise ValueError(
             "X and y must contain the same number "
@@ -28,81 +25,77 @@ def chronological_three_way_split(
             "At least 20 observations are required."
         )
 
-    if not (
-        0 < train_size < 1
-    ):
+    if not (0 < train_size < 1):
         raise ValueError(
             "train_size must be between 0 and 1."
         )
 
-    if not (
-        0 < calibration_size < 1
-    ):
+    if not (0 < calibration_size < 1):
         raise ValueError(
             "calibration_size must be between 0 and 1."
         )
 
-    if (
-        train_size + calibration_size
-        >= 1
-    ):
+    if train_size + calibration_size >= 1:
         raise ValueError(
             "train_size + calibration_size "
             "must be less than 1."
         )
 
-    n = len(X)
-
-    train_end = int(
-        n * train_size
-    )
-
-    calibration_end = int(
-        n
-        * (
-            train_size
-            + calibration_size
+    if (
+        isinstance(horizon, bool)
+        or not isinstance(horizon, (int, np.integer))
+        or horizon < 0
+    ):
+        raise ValueError(
+            "horizon must be a non-negative integer."
         )
+
+    n = len(X)
+    available_observations = n - (2 * horizon)
+
+    if available_observations < 100:
+        raise ValueError(
+            "Not enough observations remain after applying "
+            "horizon gaps; at least 100 are required."
+        )
+
+    train_end = int(available_observations * train_size)
+    calibration_count = int(
+        available_observations * calibration_size
     )
+
+    calibration_start = train_end + horizon
+    calibration_end = calibration_start + calibration_count
+    test_start = calibration_end + horizon
 
     if train_end <= 0:
+        raise ValueError("Training set is empty.")
+
+    if calibration_count <= 0:
+        raise ValueError("Calibration set is empty.")
+
+    if test_start >= n:
         raise ValueError(
-            "Training set is empty."
+            "Not enough observations remain for the test set "
+            "after applying horizon gaps."
         )
 
-    if calibration_end <= train_end:
-        raise ValueError(
-            "Calibration set is empty."
-        )
-
-    if calibration_end >= n:
-        raise ValueError(
-            "Test set is empty."
-        )
-
-    X_train = X.iloc[
-        :train_end
-    ].copy()
-
+    X_train = X.iloc[:train_end].copy()
     X_calibration = X.iloc[
-        train_end:calibration_end
+        calibration_start:calibration_end
     ].copy()
+    X_test = X.iloc[test_start:].copy()
 
-    X_test = X.iloc[
-        calibration_end:
-    ].copy()
-
-    y_train = y.iloc[
-        :train_end
-    ].copy()
-
+    y_train = y.iloc[:train_end].copy()
     y_calibration = y.iloc[
-        train_end:calibration_end
+        calibration_start:calibration_end
     ].copy()
+    y_test = y.iloc[test_start:].copy()
 
-    y_test = y.iloc[
-        calibration_end:
-    ].copy()
+    if X_train.empty or X_calibration.empty or X_test.empty:
+        raise ValueError(
+            "Training, calibration and test sets must all be non-empty."
+        )
 
     return (
         X_train,
@@ -112,7 +105,6 @@ def chronological_three_way_split(
         y_calibration,
         y_test,
     )
-
 
 def calculate_absolute_errors(
     y_true,
@@ -171,12 +163,16 @@ def calculate_calibration_error_quantile(
     if len(absolute_errors) == 0:
         return None
 
-    return float(
-        np.quantile(
-            absolute_errors,
-            confidence,
-        )
-    )
+    # Finite-sample split-conformal order statistic. The required rank is
+    # ceil((n + 1) * confidence), using one-based indexing. If that rank
+    # exceeds the calibration sample, no finite interval is supported.
+    sample_size = len(absolute_errors)
+    rank = int(np.ceil((sample_size + 1) * confidence))
+    if rank > sample_size:
+        return None
+
+    ordered_errors = np.sort(absolute_errors)
+    return float(ordered_errors[rank - 1])
 
 
 def build_prediction_interval(

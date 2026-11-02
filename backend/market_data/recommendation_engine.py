@@ -340,7 +340,11 @@ def recommend_stocks(*, risk_tolerance="moderate", market=None,
     as_of = as_of or date.today()
     latest_price_date = (
         HistoricalPrice.objects
-        .filter(stock_id=OuterRef("pk"))
+        .filter(
+            stock_id=OuterRef("pk"),
+            date__lte=as_of,
+            close_price__gt=0,
+        )
         .order_by("-date", "-id")
         .values("date")[:1]
     )

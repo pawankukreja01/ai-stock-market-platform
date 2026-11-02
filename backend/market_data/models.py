@@ -10,13 +10,71 @@ class HistoricalPrice(models.Model):
         on_delete=models.CASCADE,
         related_name="historical_prices",
     )
+
     date = models.DateField()
-    open_price = models.DecimalField(max_digits=15, decimal_places=4)
-    high_price = models.DecimalField(max_digits=15, decimal_places=4)
-    low_price = models.DecimalField(max_digits=15, decimal_places=4)
-    close_price = models.DecimalField(max_digits=15, decimal_places=4)
-    adjusted_close = models.DecimalField(max_digits=15, decimal_places=4)
-    volume = models.BigIntegerField()
+
+    # OHLC values can be NULL when the provider does not supply
+    # a usable component. The closing price remains mandatory.
+    open_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    high_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    low_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+
+    close_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+    )
+
+    adjusted_close = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+    )
+
+    # Invalid or unavailable volume is represented as NULL.
+    volume = models.BigIntegerField(
+        null=True,
+        blank=True,
+    )
+
+    # Currency provenance.
+    provider_currency = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text="Original currency denomination supplied by the provider.",
+    )
+
+    storage_currency = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text="Currency denomination used for stored monetary prices.",
+    )
+
+    # Independent data-quality dimensions.
+    is_ohlc_valid = models.BooleanField(default=True)
+    is_volume_valid = models.BooleanField(default=True)
+
+    # JSON list of quality issues, for example HIGH_BELOW_OPEN.
+    quality_flags = models.JSONField(
+        default=list,
+        blank=True,
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -192,3 +250,64 @@ class NewsArticle(models.Model):
 
     def __str__(self):
         return f"{self.stock.symbol} - {self.title}"
+
+
+class LatestQuote(models.Model):
+    QUOTE_TYPE_CHOICES = [
+        ("intraday_1m", "Intraday 1-minute bar"),
+        ("daily_close", "Latest daily close"),
+    ]
+
+    stock = models.OneToOneField(
+        Stock,
+        on_delete=models.CASCADE,
+        related_name="latest_quote",
+    )
+
+    price = models.DecimalField(max_digits=20, decimal_places=6)
+
+    previous_close = models.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+
+    volume = models.BigIntegerField(null=True, blank=True)
+
+    currency = models.CharField(
+        max_length=3,
+        null=True,
+        blank=True,
+    )
+
+    provider_currency = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text="Original currency denomination reported by the provider.",
+    )
+
+    provider = models.CharField(
+        max_length=50,
+        default="yfinance",
+    )
+
+    quote_type = models.CharField(
+        max_length=20,
+        choices=QUOTE_TYPE_CHOICES,
+    )
+
+    source_timestamp = models.DateTimeField()
+    retrieved_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-source_timestamp"]
+        verbose_name = "Latest stock quote"
+        verbose_name_plural = "Latest stock quotes"
+
+    def __str__(self):
+        return (
+            f"{self.stock.symbol} - "
+            f"{self.price} {self.currency or ''}"
+        )

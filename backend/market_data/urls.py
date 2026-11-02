@@ -1,6 +1,7 @@
 from django.urls import path
 from .screener_views import StockScreenerView
 from .investment_simulator_views import InvestmentSimulatorView
+from .quote_views import LatestQuoteView
 
 from .views import (
     HistoricalPriceListView,
@@ -81,10 +82,15 @@ urlpatterns = [
     "investment-simulator/",
     InvestmentSimulatorView.as_view(),
     name="investment-simulator",
-),
+    ),
     path(
         "recommendations/",
         StockRecommendationsView.as_view(),
         name="stock-recommendations",
+    ),
+    path(
+    "quotes/<str:symbol>/",
+    LatestQuoteView.as_view(),
+    name="latest-stock-quote",
     ),
 ]

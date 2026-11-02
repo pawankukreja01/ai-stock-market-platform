@@ -404,6 +404,7 @@ def backtest_long_flat_strategy(
     signal,
     transaction_cost_bps=5.0,
     slippage_bps=5.0,
+    holding_period=1,
 ):
     """
     Backtest a long/flat strategy.
@@ -437,22 +438,31 @@ def backtest_long_flat_strategy(
         errors="coerce",
     )
 
+    if not prices.index.is_unique:
+        raise ValueError("Price observations must have unique dates.")
+
+    prices = prices.sort_index()
+    price_values = prices.to_numpy(dtype=float)
+    if not np.isfinite(price_values).all() or (price_values <= 0).any():
+        raise ValueError(
+            "Execution prices must be finite and positive. Missing or invalid "
+            "price observations cannot be dropped or bridged in a backtest."
+        )
+
     signal = pd.to_numeric(
         signal,
         errors="coerce",
-    )
+    ).reindex(prices.index)
 
-    data = pd.concat(
-        [
-            prices.rename(
-                "price"
-            ),
-            signal.rename(
-                "signal"
-            ),
-        ],
-        axis=1,
-    ).dropna()
+    # Keep the complete price index. A missing signal means cash, but a missing
+    # or invalid execution price is rejected above rather than silently removed.
+    data = pd.DataFrame(
+        {
+            "price": prices,
+            "signal": signal,
+        },
+        index=prices.index,
+    )
 
     if len(data) < 2:
         raise ValueError(
@@ -462,26 +472,37 @@ def backtest_long_flat_strategy(
 
     data["signal"] = (
         data["signal"]
-        .clip(
-            lower=0,
-            upper=1,
-        )
-    )
-
-    # -----------------------------------------------------
-    # One-day-ahead execution
-    #
-    # Signal at t is applied at t+1.
-    # -----------------------------------------------------
-
-    data["position"] = (
-        data["signal"]
-        .shift(1)
+        .clip(lower=0, upper=1)
         .fillna(0)
     )
 
+    # -----------------------------------------------------
+    # Horizon-matched, non-overlapping execution
+    #
+    # A forecast at the start of a block selects long/cash exposure
+    # for the next `holding_period` daily return observations. The next
+    # forecast is considered only after that block has finished.
+    # -----------------------------------------------------
+
+    if (
+        isinstance(holding_period, bool)
+        or not isinstance(holding_period, (int, np.integer))
+        or holding_period < 1
+    ):
+        raise ValueError("holding_period must be a positive integer.")
+
+    positions = pd.Series(0.0, index=data.index, name="position")
+    for block_start in range(0, len(data) - 1, holding_period):
+        forecast = data["signal"].iloc[block_start]
+        position = 1.0 if forecast > 0 else 0.0
+        return_start = block_start + 1
+        return_end = min(return_start + holding_period, len(data))
+        positions.iloc[return_start:return_end] = position
+
+    data["position"] = positions
+
     data["daily_return"] = (
-        data["price"].pct_change()
+        data["price"].pct_change(fill_method=None)
     )
 
     # Gross strategy return.
@@ -614,7 +635,6 @@ def backtest_long_flat_strategy(
         "trades": trades,
     }
 
-
 # =========================================================
 # BUY AND HOLD
 # =========================================================
@@ -695,6 +715,61 @@ def create_ml_signal(
 # =========================================================
 
 
+def prepare_horizon_backtest_window(prices, predictions, holding_period=1):
+    """Align OOS forecasts to prices and include the full final holding block.
+
+    Forecasts are sampled at non-overlapping `holding_period` intervals anchored
+    at the first OOS forecast. Each selected forecast covers the next H daily
+    close-to-close returns, matching a target defined from P[t] to P[t + H].
+    """
+    if (
+        isinstance(holding_period, bool)
+        or not isinstance(holding_period, (int, np.integer))
+        or holding_period < 1
+    ):
+        raise ValueError("holding_period must be a positive integer.")
+
+    prices = pd.to_numeric(prices, errors="coerce").sort_index()
+    if not prices.index.is_unique:
+        raise ValueError("Backtest price observations must have unique dates.")
+    predictions = pd.to_numeric(predictions, errors="coerce")
+    forecast_dates = prices.index[prices.index.isin(predictions.dropna().index)]
+    if len(forecast_dates) < 2:
+        raise ValueError("At least two overlapping out-of-sample forecasts and prices are required.")
+
+    forecast_positions = prices.index.get_indexer(forecast_dates)
+    first_position = int(forecast_positions[0])
+    eligible_positions = [
+        int(position)
+        for position in forecast_positions
+        if (int(position) - first_position) % holding_period == 0
+    ]
+    if not eligible_positions:
+        raise ValueError("No eligible forecast start dates were found.")
+
+    last_decision_position = eligible_positions[-1]
+    end_position = last_decision_position + holding_period
+    if end_position >= len(prices):
+        raise ValueError(
+            "The historical price series does not contain enough future observations "
+            "to realize the full final holding period."
+        )
+
+    window_prices = prices.iloc[first_position:end_position + 1]
+    window_values = window_prices.to_numpy(dtype=float)
+    valid_prices = np.isfinite(window_values) & (window_values > 0)
+    if not valid_prices.all():
+        invalid_offset = int(np.flatnonzero(~valid_prices)[0])
+        invalid_date = window_prices.index[invalid_offset]
+        raise ValueError(
+            "Backtest window contains a missing, non-finite, or non-positive "
+            f"closing price at {invalid_date}; refusing to bridge the observation."
+        )
+
+    window_predictions = predictions.reindex(window_prices.index)
+    return window_prices, window_predictions
+
+
 def compare_strategies(
     prices,
     ml_predictions,
@@ -702,6 +777,7 @@ def compare_strategies(
     slippage_bps=5.0,
     sma_period=200,
     prediction_threshold=0.0,
+    holding_period=1,
 ):
     """
     Compare:
@@ -713,36 +789,10 @@ def compare_strategies(
     All strategies use the same price period.
     """
 
-    prices = pd.to_numeric(
+    aligned_prices, aligned_predictions = prepare_horizon_backtest_window(
         prices,
-        errors="coerce",
-    ).dropna()
-
-    ml_predictions = pd.to_numeric(
         ml_predictions,
-        errors="coerce",
-    ).dropna()
-
-    common_index = (
-        prices.index.intersection(
-            ml_predictions.index
-        )
-    )
-
-    if len(common_index) < 2:
-        raise ValueError(
-            "Not enough overlapping price and prediction "
-            "observations."
-        )
-
-    aligned_prices = prices.loc[
-        common_index
-    ]
-
-    aligned_predictions = (
-        ml_predictions.loc[
-            common_index
-        ]
+        holding_period=holding_period,
     )
 
     ml_signal = create_ml_signal(
@@ -771,6 +821,7 @@ def compare_strategies(
             slippage_bps=(
                 slippage_bps
             ),
+            holding_period=holding_period,
         )
     )
 
@@ -807,7 +858,6 @@ def compare_strategies(
         ),
         "sma": sma_result,
     }
-
 
 # =========================================================
 # WALK-FORWARD PREDICTIONS

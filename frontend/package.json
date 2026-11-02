@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "axios": "^1.20.0",
+    "cropperjs": "^1.6.2",
     "pinia": "^4.0.3",
     "plotly.js-finance-dist-min": "^4.1.2",
     "vue": "^3.5.42",

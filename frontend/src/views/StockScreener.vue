@@ -464,7 +464,13 @@
               :key="stock.symbol"
             >
               <td class="stock-cell">
-                <strong>{{ stock.symbol }}</strong>
+                <strong>
+                  <router-link
+                    :to="{ name: 'StockResearch', params: { symbol: stock.symbol } }"
+                    class="research-stock-link"
+                    :aria-label="`Open research for ${stock.symbol}`"
+                  >{{ stock.symbol }}</router-link>
+                </strong>
                 <span>{{ stock.company_name || "Company name unavailable" }}</span>
                 <small>
                   {{ stock.sector || "Sector unavailable" }}
@@ -1396,4 +1402,21 @@ button:disabled {
     flex-direction: row;
   }
 }
+.research-stock-link {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.research-stock-link:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.research-stock-link:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 </style>

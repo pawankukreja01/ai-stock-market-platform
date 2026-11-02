@@ -46,3 +46,6 @@ backups/
 logs/
 *.bak
 *.backup.vue
+
+# Downloaded local benchmark cache (not source data)
+/backend/data/raw/benchmarks/

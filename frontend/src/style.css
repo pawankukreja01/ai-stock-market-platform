@@ -1,3 +1,5 @@
+/* Shared visual foundation for the AI Stock Market Platform. */
+
 :root {
   font-family:
     Inter,
@@ -6,10 +8,52 @@
     "Segoe UI",
     sans-serif;
 
-  color: #111827;
-  background: #f5f7fa;
+  color: var(--text-primary);
+  background: var(--page-background);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+
+  /* Shared theme tokens for every page. */
+  --page-background: #f5f7fa;
+  --surface: #ffffff;
+  --surface-subtle: #f9fafb;
+  --surface-hover: #f3f6fa;
+
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+
+  --border: #e5e7eb;
+  --border-soft: #f3f4f6;
+  --border-strong: #d1d5db;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: #eff6ff;
+
+  /* Shared navigation colours. */
+  --nav-background: #111827;
+  --nav-hover: #1f2937;
+  --nav-text: #d1d5db;
+  --nav-muted: #9ca3af;
+
+  /* Status colours. */
+  --success: #047857;
+  --success-soft: #ecfdf5;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --positive: #15803d;
+  --neutral: #9ca3af;
+  --negative: #dc2626;
+
+  /* Shared component styling. */
+  --card-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+  --card-shadow-hover: 0 8px 24px rgb(15 23 42 / 7%);
+  --radius-card: 12px;
+  --radius-control: 8px;
 }
 
 * {
@@ -25,8 +69,223 @@ body,
   min-height: 100vh;
 }
 
+html {
+  background: var(--page-background);
+}
+
 body {
   margin: 0;
-  background: #f5f7fa;
-  color: #111827;
+  background: var(--page-background);
+  color: var(--text-primary);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select,
+input,
+textarea {
+  accent-color: var(--accent);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 28%);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+/* DISCOVER STOCKS LIGHT THEME OVERRIDES */
+.discover-page {
+  color: #111827 !important;
+}
+
+.discover-page .hero {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 72%, #eff6ff 100%) !important;
+  background-image: linear-gradient(135deg, #ffffff 0%, #f8fafc 72%, #eff6ff 100%) !important;
+  border-color: #e5e7eb !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 5%) !important;
+}
+
+.discover-page .hero h1,
+.discover-page .panel h2,
+.discover-page .panel h3,
+.discover-page .section-heading,
+.discover-page .popular-card .company-name,
+.discover-page .popular-card .company-details,
+.discover-page .popular-card .popular-card-top strong {
+  color: #111827 !important;
+}
+
+.discover-page .hero-copy,
+.discover-page .muted,
+.discover-page .hero-stat span,
+.discover-page .hero-stat small,
+.discover-page .market-switcher button small,
+.discover-page .popular-card-bottom,
+.discover-page .company-details small,
+.discover-page .stock-row > span:not(.market-cell),
+.discover-page .state-message,
+.discover-page .empty-state,
+.discover-page .results-heading {
+  color: #6b7280 !important;
+}
+
+.discover-page .hero-stat {
+  background: #ffffff !important;
+  border-color: #d1fae5 !important;
+}
+
+.discover-page .hero-stat strong {
+  color: #047857 !important;
+}
+
+.discover-page .market-switcher button {
+  background: #ffffff !important;
+  border-color: #e5e7eb !important;
+  color: #111827 !important;
+}
+
+.discover-page .market-switcher button:hover,
+.discover-page .market-switcher button.selected {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+
+.discover-page .panel {
+  background: #ffffff !important;
+  border-color: #e5e7eb !important;
+  color: #111827 !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 5%) !important;
+}
+
+.discover-page .popular-card {
+  background: #ffffff !important;
+  border-color: #e5e7eb !important;
+  color: #111827 !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%) !important;
+}
+
+.discover-page .popular-card:hover {
+  background: #f9fafb !important;
+  border-color: #93c5fd !important;
+}
+
+.discover-page .popular-card-top strong,
+.discover-page .card-action {
+  color: #047857 !important;
+}
+
+.discover-page .filters input,
+.discover-page .filters select {
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #111827 !important;
+}
+
+.discover-page .filters input::placeholder {
+  color: #9ca3af !important;
+}
+
+.discover-page .filters input:focus,
+.discover-page .filters select:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 12%) !important;
+}
+
+.discover-page .symbol-mark {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+.discover-page .count-pill,
+.discover-page .market-tag {
+  background: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+  color: #4b5563 !important;
+}
+
+.discover-page .primary-button {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.discover-page .primary-button:hover:not(:disabled) {
+  background: #1d4ed8 !important;
+}
+
+.discover-page .secondary-button {
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #374151 !important;
+}
+
+.discover-page .secondary-button:hover:not(:disabled) {
+  background: #f9fafb !important;
+}
+
+.discover-page .stock-row {
+  border-bottom-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
+.discover-page .stock-row:hover {
+  background: #f9fafb !important;
+}
+
+.discover-page .pagination {
+  border-top-color: #e5e7eb !important;
+  color: #6b7280 !important;
+}
+
+.discover-page .data-note {
+  background: #f9fafb !important;
+  border-color: #e5e7eb !important;
+  color: #6b7280 !important;
+}
+
+.discover-page .text-button {
+  color: #2563eb !important;
+}
+
+.discover-page .text-button:hover {
+  color: #1d4ed8 !important;
+}
+
+.discover-page .error {
+  color: #b91c1c !important;
+}
+
+
+/* Fix Cropper.js sizing inside the profile-picture modal */
+.crop-workspace .cropper-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.crop-workspace .cropper-container img {
+  display: block;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.crop-workspace .cropper-canvas,
+.crop-workspace .cropper-crop-box,
+.crop-workspace .cropper-drag-box,
+.crop-workspace .cropper-modal {
+  max-width: none;
 }

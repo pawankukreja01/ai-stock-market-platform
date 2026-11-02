@@ -1,10 +1,8 @@
 import pandas as pd
+from django.utils import timezone
 
 from ml_engine import prepare_training_dataset
-from ml_models import (
-    chronological_train_test_split,
-    run_all_models,
-)
+from ml_models import run_all_models
 
 
 SUPPORTED_HORIZONS = [
@@ -27,7 +25,7 @@ def load_stock_dataframe(
     """
     prices = list(
         HistoricalPrice.objects
-        .filter(stock=stock)
+        .filter(stock=stock, date__lte=timezone.localdate())
         .order_by("date")
         .values(
             "date",
@@ -36,6 +34,8 @@ def load_stock_dataframe(
             "low_price",
             "close_price",
             "volume",
+            "is_ohlc_valid",
+            "is_volume_valid",
         )
     )
 
@@ -47,6 +47,30 @@ def load_stock_dataframe(
 
     return pd.DataFrame(
         prices
+    )
+
+
+def chronological_purged_train_test_split(X, y, test_size=0.2, gap=0):
+    """Chronological train/test split with a purged gap before the test block."""
+    if len(X) != len(y):
+        raise ValueError("X and y must have the same length.")
+    if not 0 < test_size < 1:
+        raise ValueError("test_size must be between 0 and 1.")
+    if isinstance(gap, bool) or not isinstance(gap, int) or gap < 0:
+        raise ValueError("gap must be a non-negative integer.")
+    if len(X) < 2:
+        raise ValueError("At least two observations are required.")
+
+    test_start = int(len(X) * (1 - test_size))
+    train_end = test_start - gap
+    if train_end <= 0 or test_start >= len(X):
+        raise ValueError("Not enough observations remain after applying the gap.")
+
+    return (
+        X.iloc[:train_end].copy(),
+        X.iloc[test_start:].copy(),
+        y.iloc[:train_end].copy(),
+        y.iloc[test_start:].copy(),
     )
 
 
@@ -75,10 +99,11 @@ def run_horizon_experiment(
         X_test,
         y_train,
         y_test,
-    ) = chronological_train_test_split(
+    ) = chronological_purged_train_test_split(
         X,
         y,
         test_size=test_size,
+        gap=horizon,
     )
 
     output = run_all_models(

@@ -133,16 +133,14 @@ def latest_fundamental(stock, period_type=None):
     ).first()
 
 
-def technical_metrics(stock):
-    """
-    Calculate current technical and historical risk metrics.
+def technical_metrics(stock, as_of=None):
+    """Calculate technical metrics from stored data, optionally as of a date."""
+    queryset = HistoricalPrice.objects.filter(stock=stock)
+    if as_of is not None:
+        queryset = queryset.filter(date__lte=as_of)
 
-    This uses stored historical prices and the platform's
-    existing feature-engineering functions.
-    """
     rows = list(
-        HistoricalPrice.objects.filter(stock=stock)
-        .order_by("-date")
+        queryset.order_by("-date", "-id")
         .values(
             "date",
             "open_price",
@@ -151,39 +149,14 @@ def technical_metrics(stock):
             "close_price",
             "adjusted_close",
             "volume",
+            "is_ohlc_valid",
+            "is_volume_valid",
         )[:300]
     )
 
-    if not rows:
-        return {
-            "price": None,
-            "price_date": None,
-            "return_20d": None,
-            "rsi_14": None,
-            "volatility_20d": None,
-            "volatility_60d": None,
-            "max_drawdown_252d": None,
-            "sma20_ratio": None,
-            "sma50_ratio": None,
-            "sma200_ratio": None,
-            "technical_data_available": False,
-        }
-
-    # Queries return newest first; indicators need chronological data.
-    rows.reverse()
-    price_df = pd.DataFrame(rows)
-
-    close_values = pd.to_numeric(
-        price_df["close_price"],
-        errors="coerce",
-    )
-
-    latest_close = as_float(close_values.iloc[-1])
-    latest_date = price_df["date"].iloc[-1]
-
-    result = {
-        "price": latest_close,
-        "price_date": str(latest_date),
+    empty_result = {
+        "price": None,
+        "price_date": None,
         "return_20d": None,
         "rsi_14": None,
         "volatility_20d": None,
@@ -195,17 +168,30 @@ def technical_metrics(stock):
         "technical_data_available": False,
     }
 
-    try:
-        features = build_stock_features(
-            price_df,
-            benchmark_prices=None,
-        )
+    if not rows:
+        return empty_result
 
+    # Newest first from SQL; feature calculations require chronological rows.
+    rows.reverse()
+    price_df = pd.DataFrame(rows)
+
+    close_values = pd.to_numeric(price_df["close_price"], errors="coerce")
+    valid_close_mask = close_values.notna() & close_values.gt(0)
+
+    result = dict(empty_result)
+    if valid_close_mask.any():
+        latest_close_index = valid_close_mask[valid_close_mask].index[-1]
+        result["price"] = as_float(close_values.loc[latest_close_index])
+        result["price_date"] = str(price_df.loc[latest_close_index, "date"])
+
+    try:
+        features = build_stock_features(price_df, benchmark_prices=None)
         if features.empty:
             return result
 
+        # Do not substitute an older technical signal when the most recent
+        # candle is invalid. A valid close can still be reported separately.
         latest = features.iloc[-1]
-
         for field in (
             "return_20d",
             "rsi_14",
@@ -218,14 +204,11 @@ def technical_metrics(stock):
             if field in latest.index:
                 result[field] = as_float(latest[field])
 
-        valid_closes = close_values.dropna().tail(252)
-
+        valid_closes = close_values.where(valid_close_mask).dropna().tail(252)
         if not valid_closes.empty:
             running_peak = valid_closes.cummax()
             drawdowns = 1 - (valid_closes / running_peak)
-            result["max_drawdown_252d"] = as_float(
-                drawdowns.max()
-            )
+            result["max_drawdown_252d"] = as_float(drawdowns.max())
 
         result["technical_data_available"] = any(
             result[field] is not None
@@ -236,12 +219,8 @@ def technical_metrics(stock):
                 "volatility_60d",
             )
         )
-
     except Exception:
-        logger.exception(
-            "Could not calculate technical metrics for %s",
-            stock.symbol,
-        )
+        logger.exception("Could not calculate technical metrics for %s", stock.symbol)
 
     return result
 

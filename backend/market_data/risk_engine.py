@@ -13,25 +13,42 @@ VAR_CONFIDENCE = 0.95
 def _clean_series(series):
     """
     Convert a pandas Series to numeric values and remove invalid values.
+
+    This helper is for metrics that operate on already-calculated values.
+    Price-to-return calculations must use _price_series_preserve_gaps()
+    instead, so missing observations cannot be silently bridged.
     """
     return pd.to_numeric(series, errors="coerce").dropna()
 
 
+def _price_series_preserve_gaps(prices):
+    """Return positive numeric prices while preserving missing rows/indexes."""
+    if isinstance(prices, pd.Series):
+        numeric = pd.to_numeric(prices.copy(), errors="coerce")
+    else:
+        numeric = pd.Series(pd.to_numeric(prices, errors="coerce"))
+
+    numeric = numeric.astype(float)
+    valid = np.isfinite(numeric) & numeric.gt(0)
+    return numeric.where(valid)
+
+
 def calculate_daily_returns(prices):
     """
-    Calculate percentage daily returns from a price series.
-    """
-    prices = _clean_series(prices)
+    Calculate returns only between adjacent valid observations.
 
-    if len(prices) < 2:
+    Missing, non-finite and non-positive prices remain as gaps. In
+    particular, a bad close must not be dropped before pct_change(),
+    because that would turn a multi-session movement into a one-session
+    return and distort volatility, Sharpe, VaR and related metrics.
+    """
+    prices = _price_series_preserve_gaps(prices)
+
+    if int(prices.notna().sum()) < 2:
         return pd.Series(dtype=float)
 
-    returns = prices.pct_change().dropna()
-
-    return returns.replace(
-        [np.inf, -np.inf],
-        np.nan,
-    ).dropna()
+    returns = prices.pct_change(fill_method=None)
+    return returns.replace([np.inf, -np.inf], np.nan).dropna()
 
 
 def calculate_annualised_volatility(returns):
@@ -501,138 +518,48 @@ def calculate_risk_metrics(
     benchmark_symbol="^GSPC",
 ):
     """
-    Calculate the complete risk profile for a stock.
+    Calculate a stock risk profile without bridging missing price rows.
 
-    Parameters
-    ----------
-    stock_prices:
-        Pandas Series containing stock closing prices.
-
-    benchmark_prices:
-        Optional Pandas Series containing benchmark
-        closing prices.
-
-    benchmark_symbol:
-        Benchmark identifier.
-
-    Returns
-    -------
-    dict
-        Calculated risk metrics.
+    Missing/non-positive closes are retained as gaps for return
+    calculations. Level-based metrics use the remaining valid closes.
     """
-    stock_prices = _clean_series(
-        stock_prices
-    )
+    stock_price_series = _price_series_preserve_gaps(stock_prices)
+    valid_stock_prices = stock_price_series.dropna()
 
-    if len(stock_prices) < 2:
+    if len(valid_stock_prices) < 2:
         raise ValueError(
-            "At least two stock price observations "
-            "are required."
+            "At least two valid positive stock price observations are required."
         )
 
-    stock_returns = (
-        calculate_daily_returns(
-            stock_prices
-        )
-    )
+    stock_returns = calculate_daily_returns(stock_price_series)
 
     result = {
-        "annualised_volatility": (
-            calculate_annualised_volatility(
-                stock_returns
-            )
+        "annualised_volatility": calculate_annualised_volatility(stock_returns),
+        "maximum_drawdown": calculate_maximum_drawdown(valid_stock_prices),
+        "sharpe_ratio": calculate_sharpe_ratio(stock_returns),
+        "sortino_ratio": calculate_sortino_ratio(stock_returns),
+        "downside_deviation": calculate_downside_deviation(stock_returns),
+        "var_95": calculate_var(stock_returns, confidence=0.95),
+        "expected_shortfall_95": calculate_expected_shortfall(
+            stock_returns, confidence=0.95
         ),
-
-        "maximum_drawdown": (
-            calculate_maximum_drawdown(
-                stock_prices
-            )
-        ),
-
-        "sharpe_ratio": (
-            calculate_sharpe_ratio(
-                stock_returns
-            )
-        ),
-
-        "sortino_ratio": (
-            calculate_sortino_ratio(
-                stock_returns
-            )
-        ),
-
-        "downside_deviation": (
-            calculate_downside_deviation(
-                stock_returns
-            )
-        ),
-
-        "var_95": (
-            calculate_var(
-                stock_returns,
-                confidence=0.95,
-            )
-        ),
-
-        "expected_shortfall_95": (
-            calculate_expected_shortfall(
-                stock_returns,
-                confidence=0.95,
-            )
-        ),
-
-        "historical_loss_frequency": (
-            calculate_loss_frequency(
-                stock_returns
-            )
-        ),
-
-        "annualised_return": (
-            calculate_annualised_return(
-                stock_prices
-            )
-        ),
-
-        "observations": int(
-            len(stock_prices)
-        ),
-
+        "historical_loss_frequency": calculate_loss_frequency(stock_returns),
+        "annualised_return": calculate_annualised_return(valid_stock_prices),
+        "observations": int(len(valid_stock_prices)),
+        "return_observations": int(len(stock_returns)),
         "benchmark": benchmark_symbol,
     }
 
     if benchmark_prices is not None:
-        benchmark_prices = _clean_series(
-            benchmark_prices
+        benchmark_price_series = _price_series_preserve_gaps(benchmark_prices)
+        benchmark_returns = calculate_daily_returns(benchmark_price_series)
+        result["beta"] = calculate_beta(stock_returns, benchmark_returns)
+        result["benchmark_correlation"] = calculate_benchmark_correlation(
+            stock_returns, benchmark_returns
         )
-
-        benchmark_returns = (
-            calculate_daily_returns(
-                benchmark_prices
-            )
-        )
-
-        result["beta"] = (
-            calculate_beta(
-                stock_returns,
-                benchmark_returns,
-            )
-        )
-
-        result[
-            "benchmark_correlation"
-        ] = (
-            calculate_benchmark_correlation(
-                stock_returns,
-                benchmark_returns,
-            )
-        )
-
     else:
         result["beta"] = None
-
-        result[
-            "benchmark_correlation"
-        ] = None
+        result["benchmark_correlation"] = None
 
     return result
 

@@ -44,7 +44,7 @@ class PriceQualityIngestionTests(TestCase):
             )
             return output.getvalue(), ticker_factory
 
-    def test_invalid_row_is_skipped_without_overwriting_existing_price(self):
+    def test_invalid_ohlc_row_is_saved_and_flagged(self):
         existing = HistoricalPrice.objects.create(
             stock=self.stock,
             date=date(2026, 10, 16),
@@ -57,8 +57,9 @@ class PriceQualityIngestionTests(TestCase):
         )
 
         history = self.make_history([
-            # Invalid: high is lower than close.
+            # Invalid OHLC: high is lower than close.
             ("2026-10-16", 101, 102, 99, 104, 104, 120000),
+
             # Valid new record.
             ("2026-10-19", 105, 110, 104, 109, 109, 150000),
         ])
@@ -66,29 +67,46 @@ class PriceQualityIngestionTests(TestCase):
         output, ticker_factory = self.run_ingestion(history)
 
         existing.refresh_from_db()
-        self.assertEqual(existing.close_price, Decimal("104.0000"))
-        self.assertEqual(existing.volume, 100000)
 
-        self.assertEqual(
-            HistoricalPrice.objects.filter(stock=self.stock).count(), 2
-        )
+        # Existing record must be updated rather than silently preserved.
+        self.assertEqual(existing.open_price, Decimal("101.0000"))
+        self.assertEqual(existing.high_price, Decimal("102.0000"))
+        self.assertEqual(existing.low_price, Decimal("99.0000"))
+        self.assertEqual(existing.close_price, Decimal("104.0000"))
+        self.assertEqual(existing.volume, 120000)
+
+        # The OHLC anomaly must be explicitly recorded.
+        self.assertFalse(existing.is_ohlc_valid)
+        self.assertTrue(existing.is_volume_valid)
+        self.assertIn("HIGH_BELOW_CLOSE", existing.quality_flags)
+
+        # New valid record must also be stored.
         self.assertTrue(
             HistoricalPrice.objects.filter(
                 stock=self.stock,
                 date=date(2026, 10, 19),
                 close_price=Decimal("109.0000"),
+                is_ohlc_valid=True,
             ).exists()
         )
 
+        self.assertEqual(
+            HistoricalPrice.objects.filter(stock=self.stock).count(),
+            2,
+        )
+
+        # Provider request must retain its existing configuration.
         ticker_factory.return_value.history.assert_called_once_with(
             period="1y",
             auto_adjust=False,
             repair=True,
             timeout=30.0,
         )
+
         self.assertIn("1 records created", output)
-        self.assertIn("0 records updated", output)
-        self.assertIn("1 invalid records skipped", output)
+        self.assertIn("1 records updated", output)
+        self.assertIn("0 invalid records skipped", output)
+        self.assertIn("HIGH_BELOW_CLOSE", output)
 
     def test_missing_prices_are_skipped(self):
         history = self.make_history([
@@ -115,3 +133,40 @@ class PriceQualityIngestionTests(TestCase):
         self.assertEqual(saved.volume, 150000)
         self.assertIn("1 records created", output)
         self.assertIn("0 invalid records skipped", output)
+
+    def test_valid_currency_metadata_is_saved(self):
+        history = self.make_history([
+            ("2026-10-19", 105, 110, 104, 109, 109, 150000),
+        ])
+
+        with patch(
+            "market_data.management.commands.ingest_stock_history.yf.Ticker"
+        ) as ticker_factory:
+            ticker = ticker_factory.return_value
+            ticker.history.return_value = history
+            ticker.info = {"currency": "usd"}
+
+            call_command("ingest_stock_history", "AAPL", period="1y")
+
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.currency, "USD")
+
+    def test_missing_currency_does_not_overwrite_existing_currency(self):
+        self.stock.currency = "USD"
+        self.stock.save(update_fields=["currency"])
+
+        history = self.make_history([
+            ("2026-10-19", 105, 110, 104, 109, 109, 150000),
+        ])
+
+        with patch(
+            "market_data.management.commands.ingest_stock_history.yf.Ticker"
+        ) as ticker_factory:
+            ticker = ticker_factory.return_value
+            ticker.history.return_value = history
+            ticker.info = {}
+
+            call_command("ingest_stock_history", "AAPL", period="1y")
+
+        self.stock.refresh_from_db()
+        self.assertEqual(self.stock.currency, "USD")

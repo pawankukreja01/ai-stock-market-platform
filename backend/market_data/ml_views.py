@@ -8,11 +8,14 @@ from ml_explainability import explain_prediction
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from stocks.models import Stock
 from .models import HistoricalPrice
+from .benchmark_data import fetch_benchmark_prices
 
 from ml_engine import (
+    prepare_latest_feature_row,
     prepare_training_dataset,
 )
 
@@ -29,6 +32,7 @@ from ml_models import (
 from ml_uncertainty import (
     chronological_three_way_split,
     calculate_calibration_error_quantile,
+    calculate_interval_coverage,
 )
 
 logger = logging.getLogger(__name__)
@@ -229,7 +233,7 @@ class MLReturnPredictionView(APIView):
 
         prices = list(
             HistoricalPrice.objects
-            .filter(stock=stock)
+            .filter(stock=stock, date__lte=timezone.localdate())
             .order_by("date")
             .values(
                 "date",
@@ -238,6 +242,8 @@ class MLReturnPredictionView(APIView):
                 "low_price",
                 "close_price",
                 "volume",
+                "is_ohlc_valid",
+                "is_volume_valid",
             )
         )
 
@@ -264,10 +270,9 @@ class MLReturnPredictionView(APIView):
         # Benchmark data
         # -------------------------------------------------
 
-        benchmark_series = (
-            self._fetch_benchmark_prices(
-                price_df
-            )
+        benchmark_series = self._fetch_benchmark_prices(
+            price_df,
+            stock.exchange,
         )
 
         # -------------------------------------------------
@@ -308,6 +313,20 @@ class MLReturnPredictionView(APIView):
                 status=400,
             )
 
+        try:
+            latest_features = prepare_latest_feature_row(
+                price_df,
+                benchmark_prices=benchmark_series,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "error": "Unable to build latest forecast features.",
+                    "details": str(exc),
+                },
+                status=400,
+            )
+
         # -------------------------------------------------
         # Three-way chronological split
         # -------------------------------------------------
@@ -325,6 +344,7 @@ class MLReturnPredictionView(APIView):
                 y,
                 train_size=0.70,
                 calibration_size=0.15,
+                horizon=horizon,
             )
         except Exception as exc:
             return Response(
@@ -413,41 +433,21 @@ class MLReturnPredictionView(APIView):
                 confidence=confidence,
             )
         )
-
-        # -------------------------------------------------
-        # Refit selected model using the historical
-        # training + calibration data before generating
-        # the current prediction.
-        # -------------------------------------------------
-
-        X_refit = pd.concat(
-            [
-                X_train,
-                X_calibration,
-            ]
-        )
-
-        y_refit = pd.concat(
-            [
-                y_train,
-                y_calibration,
-            ]
-        )
-
-        final_model = model_factory()
-
-        try:
-            final_model.fit(
-                X_refit,
-                y_refit,
+        if error_margin is None:
+            empirical_test_coverage = None
+        else:
+            empirical_test_coverage = calculate_interval_coverage(
+                y_test,
+                test_predictions - error_margin,
+                test_predictions + error_margin,
             )
 
-            latest_features = X.iloc[
-                [-1]
-            ]
-
+        # Use the same fitted model for calibration, held-out evaluation and
+        # the current forecast. Refitting on calibration/test labels would
+        # change the model and make the existing calibration margin inapplicable.
+        try:
             latest_prediction = float(
-                final_model.predict(
+                model.predict(
                     latest_features
                 )[0]
             )
@@ -468,13 +468,14 @@ class MLReturnPredictionView(APIView):
         # Explain the latest prediction with SHAP
         # -------------------------------------------------
         # Explanation failure must not invalidate a forecast.
-        # X_refit contains training + calibration observations;
-        # X_test is held out from fitting and is used for global
-        # feature importance evaluation.
+        # X_test was held out when the reported metrics were calculated.
+        # After evaluation, the final forecasting model is refitted on all
+        # eligible labelled observations; X_test is reused here only for
+        # the global explanation summary.
         try:
             explainability = explain_prediction(
-                model=final_model,
-                background_features=X_refit,
+                model=model,
+                background_features=X_train,
                 instance_features=latest_features,
                 evaluation_features=X_test,
             )
@@ -628,6 +629,12 @@ class MLReturnPredictionView(APIView):
                     "testing_observations": int(
                         len(X_test)
                     ),
+                    "gap_observations": int(
+                        len(X)
+                        - len(X_train)
+                        - len(X_calibration)
+                        - len(X_test)
+                    ),
                 },
 
                 "prediction": {
@@ -665,6 +672,8 @@ class MLReturnPredictionView(APIView):
                     "calibration_error_margin": (
                         error_margin
                     ),
+                    "nominal_interval_confidence": confidence,
+                    "empirical_test_interval_coverage": empirical_test_coverage,
                 },
 
                 "benchmark": "^GSPC",
@@ -676,9 +685,10 @@ class MLReturnPredictionView(APIView):
                         "future prices."
                     ),
                     (
-                        "The prediction interval is based "
-                        "on empirical calibration errors "
-                        "from historical unseen data."
+                        "The prediction interval uses a finite-sample "
+                        "calibration-error quantile from a separate chronological "
+                        "calibration block. Empirical coverage is reported on "
+                        "the held-out test block and is not guaranteed."
                     ),
                     (
                         "Validation metrics are based on "
@@ -694,54 +704,6 @@ class MLReturnPredictionView(APIView):
         )
 
     @staticmethod
-    def _fetch_benchmark_prices(
-        price_df,
-    ):
-        """
-        Download S&P 500 closing prices covering
-        the stock's historical period.
-        """
-        if price_df.empty:
-            return pd.Series(
-                dtype=float
-            )
-
-        start_date = pd.to_datetime(
-            price_df["date"].min()
-        ).date()
-
-        end_date = (
-            pd.to_datetime(
-                price_df["date"].max()
-            ).date()
-            + timedelta(days=2)
-        )
-
-        try:
-            ticker = yf.Ticker(
-                "^GSPC"
-            )
-
-            history = ticker.history(
-                start=start_date.isoformat(),
-                end=end_date.isoformat(),
-                auto_adjust=False,
-                actions=False,
-            )
-
-            if history.empty:
-                return pd.Series(
-                    dtype=float
-                )
-
-            benchmark = pd.to_numeric(
-                history["Close"],
-                errors="coerce",
-            ).dropna()
-
-            return benchmark
-
-        except Exception:
-            return pd.Series(
-                dtype=float
-            )
+    def _fetch_benchmark_prices(price_df, exchange=""):
+        """Fetch a market-appropriate benchmark with a safe empty fallback."""
+        return fetch_benchmark_prices(price_df, exchange=exchange)

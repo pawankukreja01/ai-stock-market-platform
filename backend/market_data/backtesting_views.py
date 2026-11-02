@@ -4,9 +4,11 @@ import pandas as pd
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from stocks.models import Stock
 from .models import HistoricalPrice
+from .benchmark_data import BenchmarkDataUnavailable, fetch_benchmark_prices
 
 from ml_engine import prepare_training_dataset
 from ml_models import (
@@ -18,6 +20,7 @@ from walk_forward import generate_walk_forward_splits
 from backtesting import (
     generate_walk_forward_predictions,
     compare_strategies,
+    prepare_horizon_backtest_window,
 )
 from backtest_analysis import build_backtest_analysis
 from backtest_sensitivity import run_cost_slippage_sensitivity
@@ -185,7 +188,7 @@ class BacktestView(APIView):
 
         prices = list(
             HistoricalPrice.objects
-            .filter(stock=stock)
+            .filter(stock=stock, date__lte=timezone.localdate())
             .order_by("date")
             .values(
                 "date",
@@ -194,6 +197,8 @@ class BacktestView(APIView):
                 "low_price",
                 "close_price",
                 "volume",
+                "is_ohlc_valid",
+                "is_volume_valid",
             )
         )
 
@@ -213,8 +218,22 @@ class BacktestView(APIView):
         df = pd.DataFrame(prices)
 
         try:
+            benchmark_series = fetch_benchmark_prices(
+                df, stock.exchange, strict=True
+            )
+        except BenchmarkDataUnavailable as exc:
+            return Response(
+                {
+                    "error": "Benchmark data is unavailable for a reproducible backtest.",
+                    "details": str(exc),
+                },
+                status=503,
+            )
+
+        try:
             X, y = prepare_training_dataset(
                 df,
+                benchmark_prices=benchmark_series,
                 horizon=horizon,
             )
         except Exception as exc:
@@ -327,6 +346,8 @@ class BacktestView(APIView):
                 status=500,
             )
 
+        # Preserve every stored observation date. The horizon-window helper
+        # will reject an invalid execution price instead of bridging the gap.
         close_prices = pd.Series(
             pd.to_numeric(
                 df["close_price"],
@@ -334,7 +355,7 @@ class BacktestView(APIView):
             ).values,
             index=pd.to_datetime(df["date"]),
             name="close",
-        ).dropna()
+        )
 
         common_index = close_prices.index.intersection(
             prediction_series.index
@@ -351,8 +372,14 @@ class BacktestView(APIView):
                 status=400,
             )
 
-        aligned_prices = close_prices.loc[common_index]
-        aligned_predictions = prediction_series.loc[common_index]
+        try:
+            aligned_prices, aligned_predictions = prepare_horizon_backtest_window(
+                close_prices,
+                prediction_series,
+                holding_period=horizon,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
 
         try:
             strategy_results = compare_strategies(
@@ -362,6 +389,7 @@ class BacktestView(APIView):
                 slippage_bps=slippage_bps,
                 sma_period=200,
                 prediction_threshold=threshold,
+                holding_period=horizon,
             )
         except Exception as exc:
             return Response(
@@ -445,6 +473,7 @@ class BacktestView(APIView):
                 selected_slippage_bps=slippage_bps,
                 prediction_threshold=threshold,
                 sma_period=200,
+                holding_period=horizon,
             )
         except Exception as exc:
             return Response(
@@ -466,12 +495,13 @@ class BacktestView(APIView):
                 "backtest_period": {
                     "start_date": first_index.strftime("%Y-%m-%d"),
                     "end_date": last_index.strftime("%Y-%m-%d"),
-                    "observations": len(aligned_prices),
+                    "observations": len(aligned_prices) - 1,
                 },
                 "configuration": {
                     "transaction_cost_bps": transaction_cost_bps,
                     "slippage_bps": slippage_bps,
                     "prediction_threshold": threshold,
+                    "ml_holding_period_trading_days": horizon,
                     "minimum_train_size": minimum_train_size,
                     "test_size": test_size,
                     "step_size": step_size,
@@ -491,6 +521,11 @@ class BacktestView(APIView):
                     (
                         "A gap equal to the prediction horizon is placed "
                         "between each training window and its test window."
+                    ),
+                    (
+                        "The ML strategy uses non-overlapping blocks: each selected "
+                        "forecast determines long/cash exposure for the next horizon "
+                        "trading-day returns."
                     ),
                     (
                         "Transaction costs and slippage are explicit backtest "

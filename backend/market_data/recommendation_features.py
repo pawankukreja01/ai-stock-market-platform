@@ -85,26 +85,19 @@ def _fundamental_features(stock):
     return result
 
 
-def _historical_risk_features(stock):
-    """Calculate risk metrics from valid, chronological stored closes."""
+def _historical_risk_features(stock, as_of=None):
+    """Calculate risk from positive stored closes, preserving invalid-row gaps."""
+    queryset = HistoricalPrice.objects.filter(stock=stock)
+    if as_of is not None:
+        queryset = queryset.filter(date__lte=as_of)
+
     rows = list(
-        HistoricalPrice.objects.filter(stock=stock)
-        .order_by("-date", "-id")
+        queryset.order_by("-date", "-id")
         .values("date", "close_price")[:MAX_PRICE_OBSERVATIONS]
     )
-
     rows.reverse()
 
-    valid_rows = []
-    for row in rows:
-        close = _safe_float(row["close_price"])
-        if close is not None and close > 0:
-            valid_rows.append({
-                "date": row["date"],
-                "close_price": close,
-            })
-
-    if not valid_rows:
+    if not rows:
         return {
             "risk_data_available": False,
             "risk_observations": 0,
@@ -115,19 +108,22 @@ def _historical_risk_features(stock):
             "annualised_return": None,
         }
 
-    prices = pd.Series(
-        [row["close_price"] for row in valid_rows],
-        index=pd.to_datetime([row["date"] for row in valid_rows]),
-        dtype=float,
-    )
+    dates = pd.to_datetime([row["date"] for row in rows])
+    close_values = []
+    for row in rows:
+        close = _safe_float(row["close_price"])
+        close_values.append(close if close is not None and close > 0 else float("nan"))
 
-    # Duplicate dates can exist in imperfect historical datasets.
+    # Keep invalid close rows as NaN. Dropping them here would make the risk
+    # engine calculate a multi-session move as though it were a daily return.
+    prices = pd.Series(close_values, index=dates, dtype=float)
     prices = prices[~prices.index.duplicated(keep="last")].sort_index()
+    valid_observations = int(prices.notna().sum())
 
-    if len(prices) < MIN_PRICE_OBSERVATIONS:
+    if valid_observations < MIN_PRICE_OBSERVATIONS:
         return {
             "risk_data_available": False,
-            "risk_observations": len(prices),
+            "risk_observations": valid_observations,
             "annualised_volatility": None,
             "maximum_drawdown": None,
             "sharpe_ratio": None,
@@ -138,27 +134,18 @@ def _historical_risk_features(stock):
     try:
         metrics = calculate_risk_metrics(prices)
     except (ValueError, TypeError, ArithmeticError):
-        logger.exception(
-            "Risk calculation failed for %s", stock.symbol
-        )
+        logger.exception("Risk calculation failed for %s", stock.symbol)
         metrics = {}
 
     return {
         "risk_data_available": bool(metrics),
-        "risk_observations": metrics.get(
-            "observations", len(prices)
-        ),
-        "annualised_volatility": _safe_float(
-            metrics.get("annualised_volatility")
-        ),
-        "maximum_drawdown": _safe_float(
-            metrics.get("maximum_drawdown")
-        ),
+        "risk_observations": metrics.get("observations", valid_observations),
+        "risk_return_observations": metrics.get("return_observations", 0),
+        "annualised_volatility": _safe_float(metrics.get("annualised_volatility")),
+        "maximum_drawdown": _safe_float(metrics.get("maximum_drawdown")),
         "sharpe_ratio": _safe_float(metrics.get("sharpe_ratio")),
         "sortino_ratio": _safe_float(metrics.get("sortino_ratio")),
-        "annualised_return": _safe_float(
-            metrics.get("annualised_return")
-        ),
+        "annualised_return": _safe_float(metrics.get("annualised_return")),
     }
 
 
@@ -171,10 +158,10 @@ def extract_candidate_features(stock, *, as_of=None):
     """
     as_of = as_of or date.today()
 
-    technical = technical_metrics(stock)
+    technical = technical_metrics(stock, as_of=as_of)
     fundamentals = _fundamental_features(stock)
     sentiment = sentiment_metrics(stock)
-    risk = _historical_risk_features(stock)
+    risk = _historical_risk_features(stock, as_of=as_of)
 
     price = _safe_float(technical.get("price"))
     price_date = technical.get("price_date")

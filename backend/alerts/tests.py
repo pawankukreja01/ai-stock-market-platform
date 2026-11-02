@@ -12,6 +12,7 @@ from market_data.models import HistoricalPrice, NewsArticle
 from stocks.models import Stock
 
 from .models import AlertEvent, AlertRule
+from alerts.management.commands.evaluate_alerts import get_observed_value
 
 
 class AlertAPITests(TestCase):
@@ -107,6 +108,31 @@ class AlertAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_price_alert_ignores_non_positive_latest_close(self):
+        rule = self.create_rule(
+            alert_type=AlertRule.PRICE_ABOVE,
+            threshold="300.00",
+        )
+
+        HistoricalPrice.objects.create(
+            stock=self.stock,
+            date=date(2026, 10, 17),
+            open_price=Decimal("0.00"),
+            high_price=Decimal("0.00"),
+            low_price=Decimal("0.00"),
+            close_price=Decimal("0.00"),
+            adjusted_close=Decimal("0.00"),
+            volume=0,
+            is_ohlc_valid=False,
+            is_volume_valid=True,
+            quality_flags={"ohlc": "non_positive_close"},
+        )
+
+        self.assertEqual(
+            get_observed_value(rule),
+            Decimal("343.46"),
+        )
 
     def test_evaluator_triggers_price_alert_once(self):
         rule = self.create_rule(
