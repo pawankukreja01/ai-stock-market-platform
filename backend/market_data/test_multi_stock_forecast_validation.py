@@ -1,4 +1,9 @@
 from datetime import date
+import numpy as np
+import pandas as pd
+from io import StringIO
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
 from market_data.management.commands.validate_stock_forecasts import (
@@ -122,3 +127,48 @@ class ModelScorecardTests(SimpleTestCase):
         ))
         self.assertIsNone(scorecard["best_baseline"])
         self.assertIn("insufficient", render_model_scorecard(scorecard))
+
+
+class ConservativeResearchModelTests(SimpleTestCase):
+    def test_research_models_train_and_predict_on_finite_data(self):
+        from market_data.management.commands.validate_stock_forecasts import MODEL_FACTORIES
+        X = pd.DataFrame({
+            "return_1d": np.sin(np.arange(80) / 7.0),
+            "return_5d": np.cos(np.arange(80) / 10.0),
+            "trend_ratio": np.arange(80) / 100.0,
+        })
+        y = pd.Series(np.sin(np.arange(80) / 5.0) / 100.0)
+        for model_name in ("conservative_forest", "zero_anchor_ridge"):
+            with self.subTest(model=model_name):
+                model = MODEL_FACTORIES[model_name]()
+                model.fit(X.iloc[:60], y.iloc[:60])
+                predictions = model.predict(X.iloc[60:])
+                self.assertEqual(len(predictions), 20)
+                self.assertTrue(np.isfinite(predictions).all())
+
+    def test_zero_anchor_ridge_does_not_learn_bullish_intercept(self):
+        from ml_models import create_zero_anchor_ridge_model
+        X = pd.DataFrame({"signal": [0.0] * 60})
+        y = pd.Series([0.08] * 60)
+        model = create_zero_anchor_ridge_model()
+        model.fit(X, y)
+        result = model.predict(pd.DataFrame({"signal": [0.0]}))
+        self.assertAlmostEqual(float(result[0]), 0.0, places=8)
+
+    def test_invalid_as_of_argument_is_rejected_early(self):
+        with self.assertRaisesRegex(CommandError, "YYYY-MM-DD"):
+            call_command(
+                "validate_stock_forecasts",
+                symbols=["AAPL"],
+                as_of="not-a-date",
+                stdout=StringIO(),
+            )
+
+    def test_future_as_of_argument_is_rejected_early(self):
+        with self.assertRaisesRegex(CommandError, "future"):
+            call_command(
+                "validate_stock_forecasts",
+                symbols=["AAPL"],
+                as_of="2099-01-01",
+                stdout=StringIO(),
+            )
