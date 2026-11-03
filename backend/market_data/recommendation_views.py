@@ -34,6 +34,7 @@ class StockRecommendationsView(APIView):
             risk_tolerance=params["risk_tolerance"],
             market=params.get("market"),
             max_candidates=params["max_candidates"],
+            horizon_months=params["horizon_months"],
         )
 
         allocation = allocate_whole_shares(
@@ -65,7 +66,7 @@ class StockRecommendationsView(APIView):
             "Allocation does not account for brokerage fees, transaction costs, taxes, bid-ask spreads, slippage, or settlement restrictions.",
             "The allocation process does not consider existing holdings, liabilities, emergency savings, or other personal financial circumstances.",
             "The budget is allocated using a simple ranking-based method; portfolio diversification and sector or concentration limits are not enforced.",
-            "The investment horizon is recorded but is not incorporated into suitability scoring or allocation.",
+            "Investment horizon adjusts provisional momentum/fundamental scoring weights. These heuristic adjustments have not yet been validated for predictive performance or investor suitability.",
             "Risk tolerance changes scoring weights but does not constitute a complete assessment of an investor's risk capacity or financial circumstances.",
             "Forecasts are not included in the recommendation scoring model.",
             "Sentiment scoring depends on the availability and quality of stored news articles and their sentiment analysis.",
