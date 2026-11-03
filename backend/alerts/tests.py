@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from io import StringIO
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -20,6 +21,10 @@ class AlertAPITests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="alert_owner", password="test-only-password"
+        )
+        self.client.force_authenticate(user=self.user)
 
         self.stock = Stock.objects.create(
             symbol="AAPL",
@@ -48,6 +53,7 @@ class AlertAPITests(TestCase):
         name="Test AAPL alert",
     ):
         return AlertRule.objects.create(
+            owner=self.user,
             stock=self.stock,
             name=name,
             alert_type=alert_type,
@@ -311,3 +317,52 @@ class AlertAPITests(TestCase):
             AlertEvent.objects.filter(rule=rule).count(),
             0,
         )
+    def test_anonymous_alert_api_rejected(self):
+        anonymous = APIClient()
+        self.assertIn(anonymous.get("/api/alerts/").status_code, (401, 403))
+        self.assertIn(anonymous.get("/api/alerts/events/").status_code, (401, 403))
+
+    def test_cross_user_alert_rules_and_events_denied(self):
+        other = get_user_model().objects.create_user(
+            username="other_alert_user", password="test-only-password"
+        )
+        rule = AlertRule.objects.create(
+            owner=other, stock=self.stock, alert_type="price_above",
+            threshold=Decimal("300.00")
+        )
+        event = AlertEvent.objects.create(
+            rule=rule, observed_value=Decimal("343.46"), message="Private event"
+        )
+        rules = self.client.get("/api/alerts/")
+        self.assertEqual(rules.status_code, 200)
+        self.assertNotIn(rule.pk, [row["id"] for row in rules.data])
+        events = self.client.get("/api/alerts/events/")
+        self.assertEqual(events.status_code, 200)
+        self.assertNotIn(event.pk, [row["id"] for row in events.data["results"]])
+        self.assertEqual(self.client.get(f"/api/alerts/{rule.pk}/").status_code, 404)
+        self.assertEqual(self.client.patch(
+            f"/api/alerts/{rule.pk}/", {"name": "Stolen"}, format="json"
+        ).status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/alerts/{rule.pk}/").status_code, 404)
+        self.assertEqual(self.client.post(f"/api/alerts/events/{event.pk}/read/").status_code, 404)
+        self.assertFalse(AlertEvent.objects.get(pk=event.pk).is_read)
+
+    def test_new_alert_ignores_spoofed_owner(self):
+        other = get_user_model().objects.create_user(
+            username="other_alert_target", password="test-only-password"
+        )
+        r = self.client.post("/api/alerts/", {
+            "stock_symbol": self.stock.symbol, "alert_type": "price_above",
+            "threshold": "300.00", "owner": other.pk
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(AlertRule.objects.get(pk=r.data["id"]).owner, self.user)
+        self.assertNotIn("owner", r.data)
+
+    def test_legacy_alert_preserved_and_hidden(self):
+        legacy = AlertRule.objects.create(
+            stock=self.stock, alert_type="price_above",
+            threshold=Decimal("300.00")
+        )
+        self.assertEqual(self.client.get(f"/api/alerts/{legacy.pk}/").status_code, 404)
+        self.assertTrue(AlertRule.objects.filter(pk=legacy.pk, owner__isnull=True).exists())
