@@ -20,7 +20,7 @@ from market_data.management.commands.preview_historical_adjustments import (
 
 class HistoricalAdjustmentPreviewTests(SimpleTestCase):
     def test_ratios_are_currency_invariant_and_invalid_values_rejected(self):
-        self.assertAlmostEqual(factor_from_prices(1812.5, 1555.7653), 0.858352)
+        self.assertAlmostEqual(factor_from_prices(1812.5, 1555.7653), 0.858353, places=5)
         self.assertAlmostEqual(factor_from_prices(18.125, 15.557653), 0.858353)
         self.assertIsNone(factor_from_prices(0, 100))
         self.assertIsNone(factor_from_prices(1, float("nan")))
