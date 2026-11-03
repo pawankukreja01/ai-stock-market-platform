@@ -6,10 +6,12 @@ selected development database and run it in a separate terminal.
 """
 
 from datetime import timedelta
+import os
 from decimal import Decimal, InvalidOperation
 import time
 
 from django.core.management import call_command
+from django.db import connection
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -84,6 +86,22 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Fail closed: the opt-in monitor may update quotes and alert state.
+        # Explicitly select a development DB so a missing environment
+        # override cannot silently target the preserved original database.
+        explicit_db_name = os.environ.get("DB_NAME", "").strip()
+        configured_name = connection.settings_dict["NAME"]
+        if (
+            not explicit_db_name
+            or explicit_db_name != configured_name
+            or configured_name == "ai_stock_market"
+        ):
+            raise CommandError(
+                "Monitoring requires explicit DB_NAME for the intended "
+                "non-original database. The original ai_stock_market "
+                "database is protected."
+            )
+
         symbols = list(dict.fromkeys(
             text.strip().upper() for text in options["symbols"] if text.strip()
         ))
