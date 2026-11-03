@@ -51,6 +51,13 @@
         </router-link>
 
         <router-link
+          to="/research-health"
+          exact-active-class="router-link-exact-active"
+        >
+          Research Health
+        </router-link>
+
+        <router-link
           to="/screener"
           exact-active-class="router-link-exact-active"
         >
