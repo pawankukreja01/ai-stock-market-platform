@@ -79,6 +79,7 @@ export const getResearchReadiness = async (symbols = "") => {
   return response.data;
 };
 
+
 export const getProspectiveResults = async (symbol = "") => {
   const response = await api.get("/prospective-forecasts/results/", {
     params: symbol ? { symbol } : {},
@@ -319,7 +320,7 @@ export const getCsrfToken = async () => {
 
   if (!csrfTokenPromise) {
     csrfTokenPromise = api
-      .get("/auth/csrf/")
+      .get("/auth/csrf/", { timeout: 8000 })
       .then((response) => response.data.csrfToken)
       .finally(() => {
         csrfTokenPromise = null;
@@ -347,6 +348,7 @@ const authPost = async (url, payload = {}) => {
   const csrfToken = await getCsrfToken();
 
   const response = await api.post(url, payload, {
+    timeout: 8000,
     headers: {
       "X-CSRFToken": csrfToken,
     },
@@ -405,8 +407,13 @@ export const confirmPasswordReset = async ({
 };
 
 export const getCurrentUser = async () => {
-  const response = await api.get("/auth/me/");
+  const response = await api.get("/auth/me/", { timeout: 8000 });
   return response.data;
+};
+
+// Explicit user interaction only. Ordinary GETs must never extend server idle time.
+export const confirmSessionActivity = async () => {
+  return authPost("/auth/activity/");
 };
 
 

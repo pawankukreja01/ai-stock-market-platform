@@ -126,6 +126,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.session_security.ServerInactivityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -228,8 +229,6 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Compressed and hashed assets for deterministic deployment. Do not serve user
-# uploads with WhiteNoise; production media requires a separate storage tier.
 STORAGES = {
     # Preserve Django's normal media-file behavior in local preview.
     # Production user uploads require separately configured private storage.
@@ -241,7 +240,6 @@ STORAGES = {
         ),
     },
 }
-
 
 MEDIA_URL = "/media/"
 
@@ -310,11 +308,14 @@ EMAIL_VERIFICATION_REQUIRED = (
 # Session security
 # --------------------------------------------------
 
-# Session expires after 30 minutes without a request.
-SESSION_COOKIE_AGE = 30 * 60
-
-# Refresh session expiry whenever a request is made.
-SESSION_SAVE_EVERY_REQUEST = True
+# Server tracks actual explicit user activity; passive API requests do NOT
+# renew the session. A second, absolute cap applies even when active.
+MARKETPULSE_IDLE_TIMEOUT_SECONDS = 30 * 60
+MARKETPULSE_ABSOLUTE_SESSION_SECONDS = 12 * 60 * 60
+SESSION_COOKIE_AGE = MARKETPULSE_IDLE_TIMEOUT_SECONDS
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_NAME = "marketpulse_session"
 
 # End the session when the browser is closed.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -325,9 +326,18 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 # --------------------------------------------------
 
 REST_FRAMEWORK = {
+    # The first-party Vue app authenticates via Django sessions and CSRF,
+    # not HTTP Basic credentials sent with every request.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    # Never trust client-supplied X-Forwarded-For for rate-limit identity.
+    # Behind a trusted proxy, configure this only after auditing its headers.
+    "NUM_PROXIES": 0,
     "DEFAULT_THROTTLE_RATES": {
         # Maximum five verification attempts per hour.
         "auth_verification": "5/hour",
+        "auth_login": "10/hour",
 
         # Maximum five password-reset requests per hour.
         "auth_password_reset": "5/hour",
