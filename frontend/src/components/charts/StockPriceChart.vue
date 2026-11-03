@@ -704,7 +704,14 @@
         v-else-if="!latestFundamental"
         class="fundamentals-empty"
       >
-        No fundamental data available for this period.
+        No {{ fundamentalsPeriod }} fundamental statements are stored for {{ symbol }}.
+        This is missing provider coverage, not a zero financial result.
+        <button
+          v-if="fundamentalsPeriod === 'quarterly'"
+          type="button"
+          class="fundamentals-show-annual"
+          @click="changeFundamentalsPeriod('annual')"
+        >View annual data</button>
       </div>
 
       <template v-else>
@@ -4691,7 +4698,8 @@ const formatFundamentalCurrency = (value) => {
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
-  return `$${number.toLocaleString("en-US", {
+  const currency = props.symbol.toUpperCase().endsWith(".L") ? "GBP" : "USD";
+  return `${currency} ${number.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -8826,5 +8834,16 @@ onBeforeUnmount(() => {
 .ml-generate-button:focus-visible {
   outline: 3px solid rgb(37 99 235 / 25%);
   outline-offset: 2px;
+}
+ .fundamentals-show-annual {
+  display: inline-block;
+  margin-left: 8px;
+  border: 1px solid var(--border-strong, #d1d5db);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  color: var(--text-primary, #17263d);
+  cursor: pointer;
+  font-size: 12px;
 }
 </style>
