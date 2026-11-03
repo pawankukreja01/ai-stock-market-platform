@@ -67,6 +67,30 @@ The original `ai_stock_market` database must be preserved. The latest
 readiness and provider safeguards are research tooling, not a declaration
 that predictive models outperform baselines.
 
+## Next development phase: Yahoo rate-limit resilience
+
+The quote service now treats explicit Yahoo Finance HTTP 429 / rate-limit
+errors as provider unavailability, **not stock delisting**. If the
+first intraday request is rate-limited, it does not immediately make a
+second daily request. A bulk quote refresh stops its remaining requests
+after a confirmed 429; the opt-in personal quote monitor also halts on a
+confirmed rate limit rather than repeatedly requesting each symbol.
+
+These protections retain the last stored quote and its authoritative
+**source timestamp** (not a freshly fabricated timestamp). The
+authenticated Research Health page at `/research-health` continues to
+show cached data and source freshness with no external requests.
+
+The detection recognizes explicit HTTP 429 and yfinance rate-limit errors,
+but it cannot prevent all provider errors, remove existing rate limits, or
+guarantee market data access. There is no automatic bypass, IP rotation,
+or uncontrolled retry. A stopped monitor must be restarted explicitly
+once the provider is accessible and authorized.
+
+This next phase is developed separately from the merged review build;
+read-only validation and the original database preservation rules remain
+in force.
+
 ## Main capabilities
 
 The current application includes the following areas:
