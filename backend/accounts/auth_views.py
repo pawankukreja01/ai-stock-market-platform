@@ -59,6 +59,7 @@ def _verification_is_required():
     return not (settings.DEBUG and not settings.EMAIL_VERIFICATION_REQUIRED)
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
@@ -188,6 +189,7 @@ def login_view(request):
     )
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([VerificationRateThrottle])
@@ -235,6 +237,7 @@ def verify_email(request):
     return Response({"message": "Your email has been verified. You can now log in."})
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([VerificationRateThrottle])
@@ -270,6 +273,7 @@ def resend_verification_email(request):
 
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetRateThrottle])
@@ -312,6 +316,7 @@ def request_password_reset(request):
 
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetRateThrottle])
