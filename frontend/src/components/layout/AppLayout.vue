@@ -119,6 +119,13 @@
       </main>
     </div>
 
+    <div v-if="logoutInProgress" class="session-overlay" role="status" aria-live="polite">
+      <section class="session-modal">
+        <h2>Securing your session</h2>
+        <p>Signing out and checking that your account is no longer accessible.</p>
+      </section>
+    </div>
+
     <!-- Inactivity warning modal -->
     <div
       v-if="showInactivityWarning"
