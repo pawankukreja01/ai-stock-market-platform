@@ -78,12 +78,13 @@ class MarketAwareBenchmarkComparisonTests(TestCase):
         self.client = APIClient()
 
     @patch("market_data.views.yf.Ticker")
-    def test_london_comparison_does_not_query_us_indexes(self, ticker):
-        history = pd.DataFrame(
-            {"Close": [100, 102, 103]},
+    @patch("market_data.views.fetch_cached_benchmark_prices")
+    def test_london_comparison_uses_cached_ftse_not_us_indexes(self, fetch, ticker):
+        fetch.return_value = pd.Series(
+            [100, 102, 103],
             index=pd.date_range("2026-10-19", periods=3),
+            dtype=float,
         )
-        ticker.return_value.history.return_value = history
 
         response = self.client.get("/api/benchmark-comparison/", {
             "exchange": "LSE",
@@ -95,9 +96,11 @@ class MarketAwareBenchmarkComparisonTests(TestCase):
         self.assertEqual(response.data["market"], "UK")
         self.assertEqual(response.data["benchmarks"]["sp500"]["name"], "FTSE 100")
         self.assertEqual(response.data["benchmarks"]["sp500"]["symbol"], "^FTSE")
+        self.assertEqual(len(response.data["benchmarks"]["sp500"]["dates"]), 3)
         self.assertEqual(response.data["benchmarks"]["nasdaq100"]["dates"], [])
         self.assertEqual(response.data["benchmarks"]["sector"]["dates"], [])
-        ticker.assert_called_once_with("^FTSE")
+        fetch.assert_called_once()
+        ticker.assert_not_called()
 
     @patch("market_data.views.yf.Ticker")
     def test_us_comparison_keeps_sp500_and_nasdaq(self, ticker):
