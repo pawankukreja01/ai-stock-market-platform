@@ -1,36 +1,37 @@
-import { getCurrentUser, logoutUser } from "../services/api";
+import { getCurrentUser, logoutUser } from "../services/api.js";
 import {
   clearLogoutPending, clearSessionExpiry, logoutPending, markLogoutPending,
 } from "./sessionSafety.js";
 
-// The browser must not treat a redirect as proof of server-side logout.
-// Only a successful logout POST followed by an unauthenticated /me
-// response may unlock ordinary guest navigation. Pending flags survive
-// reload and synchronize between tabs without storing sensitive tokens.
-async function serverReportsAnonymous() {
+// A redirect is not proof of logout. Only a server-confirmed anonymous
+// response can release the persistent signout lock.
+async function serverReportsAnonymous(currentUser) {
   try {
-    await getCurrentUser();
+    await currentUser();
     return false;
-  } catch (err) {
-    return err?.response?.status === 401 || err?.response?.status === 403;
+  } catch (error) {
+    return error?.response?.status === 401 || error?.response?.status === 403;
   }
 }
 
-export async function confirmServerLogout() {
+export async function confirmServerLogout({
+  logout = logoutUser,
+  currentUser = getCurrentUser,
+} = {}) {
   markLogoutPending();
   try {
-    await logoutUser();
+    await logout();
   } catch {
-    // This may already be an expired session. Confirm with the server.
-    if (!(await serverReportsAnonymous())) return false;
+    // The session might already have timed out. Check authoritatively.
+    if (!(await serverReportsAnonymous(currentUser))) return false;
   }
-  if (!(await serverReportsAnonymous())) return false;
+  if (!(await serverReportsAnonymous(currentUser))) return false;
   clearSessionExpiry();
   clearLogoutPending();
   return true;
 }
 
-export async function resolvePendingLogout() {
+export async function resolvePendingLogout(dependencies = {}) {
   if (!logoutPending()) return true;
-  return confirmServerLogout();
+  return confirmServerLogout(dependencies);
 }
