@@ -5,7 +5,9 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app/
-RUN DJANGO_DEBUG=true python manage.py collectstatic --noinput
+# Build hashed-manifest static assets using production static storage.
+# This one-off build key is not a runtime secret or a deployed credential.
+RUN DJANGO_DEBUG=false DJANGO_SECRET_KEY=ephemeral-build-only-static-assets DJANGO_ALLOWED_HOSTS=localhost python manage.py collectstatic --noinput
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
