@@ -800,6 +800,31 @@ independent out-of-sample confirmation. Future forward-collected
 observations or a pre-registered separate asset cohort are needed for
 a new final validation. Neither candidate is automatically selected.
 
+**Step 25.5 – Paired feature ablation (recommended):** Instead of
+comparing two separately prepared datasets, the read-only
+\`compare_forecast_feature_sets\` command intersects both feature matrices
+**before** chronological splits. It verifies identical future-return targets,
+uses identical expanding walk-forward train/test dates and purge gaps, and
+checks that all baseline metrics are identical. A missing same-market
+benchmark cache causes an explicit skipped stock, never a fallback.
+The command explicitly refuses databases other than
+\`marketpulse_restored_test\`.
+
+\`\`\`bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py compare_forecast_feature_sets \
+  --symbols AAPL MSFT NVDA ABF.L \
+  --model zero_anchor_ridge --horizon 5 \
+  --min-train 500 --test-size 100 --as-of 2026-06-30
+\`\`\`
+
+A positive \`market feature improvement\` means lower model MAE from
+market-aligned features on exactly the same out-of-sample dates. The
+comparison is a **historical development diagnostic**, not untouched
+independent evidence or a claim of profitable trading. The default
+comparison prints a brief scorecard; optional \`--output\` creates a new
+JSON file without overwriting an existing one.
+
 Run the price-only protocol separately to compare **feature groups**, not
 as evidence of deployable forecasting skill. Use fixed training procedures
 and a separately untouched final time window for any subsequent model
