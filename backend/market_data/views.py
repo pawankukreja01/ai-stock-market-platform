@@ -184,6 +184,25 @@ class BenchmarkComparisonView(APIView):
                     }
                     continue
 
+                if market == "UK":
+                    # Reuse the same cached FTSE series as UK ML/risk.
+                    # This avoids another identical provider request.
+                    series = fetch_cached_benchmark_prices(
+                        pd.DataFrame({"date": [parsed_start_date, parsed_end_date]}),
+                        exchange=exchange,
+                    )
+                    series = series.loc[
+                        (series.index >= pd.Timestamp(parsed_start_date))
+                        & (series.index <= pd.Timestamp(parsed_end_date))
+                    ]
+                    result[key] = {
+                        "symbol": benchmark["symbol"],
+                        "name": benchmark["name"],
+                        "dates": [value.strftime("%Y-%m-%d") for value in series.index],
+                        "close": [float(value) for value in series.values],
+                    }
+                    continue
+
                 ticker = yf.Ticker(
                     benchmark["symbol"]
                 )
