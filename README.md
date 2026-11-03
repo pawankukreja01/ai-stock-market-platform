@@ -800,6 +800,29 @@ independent out-of-sample confirmation. Future forward-collected
 observations or a pre-registered separate asset cohort are needed for
 a new final validation. Neither candidate is automatically selected.
 
+**Step 25.12 – Diagnose Yahoo historical adjusted-price repairs safely:** Run
+the **read-only** provider comparison before considering any historical
+re-ingestion. The existing \`ingest_stock_history\` command uses
+\`repair=True\` and **updates existing historical records**; do not invoke
+it to investigate an unexplained adjustment shift. The preview requires
+the explicit \`marketpulse_restored_test\` database and never calls
+\`update_or_create\` or writes any prices.
+
+\`\`\`bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py preview_historical_adjustments \
+  --symbols ABF.L
+\`\`\`
+
+The preview requests Yahoo's \`repair=False\` and \`repair=True\` in-memory,
+counts adjusted/close factor mismatches on overlapping trading dates,
+prints stored and current repaired-provider factor jumps, and reports
+Yahoo's \`Repaired?\` flags. These are diagnostics, not proof that Yahoo
+adjusted prices or historical corporate actions were correct. In
+particular, differences between download modes do **not** justify
+automatically overwriting historical prices. Current ML return targets
+use stored \`close_price\`, not \`adjusted_close\`.
+
 **Step 25.5 – Paired feature ablation (recommended):** Instead of
 comparing two separately prepared datasets, the read-only
 \`compare_forecast_feature_sets\` command intersects both feature matrices
