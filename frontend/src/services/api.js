@@ -402,6 +402,11 @@ export const getCurrentUser = async () => {
   return response.data;
 };
 
+// Explicit user interaction only. Ordinary GETs must never extend server idle time.
+export const confirmSessionActivity = async () => {
+  return authPost("/auth/activity/");
+};
+
 
 
 export const updateProfile = async (payload) => {
