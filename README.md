@@ -654,3 +654,82 @@ Never commit `.env`, database passwords, API credentials, private user media, ge
 6. Review `git status --short` and `git diff --check` before committing.
 
 For bugs, include the relevant command, full error output, and the affected feature. Never include passwords, tokens, or private user data in an issue or log excerpt.
+
+---
+
+## Forecast evidence and launch gates
+
+The ML prediction API at `GET /api/ml-prediction/?symbol=AAPL&horizon=5&model=random_forest`
+returns a *research forecast* of the return after hypothetical execution at the
+**next session close**. It does not know that future entry price, so the API
+does not assert a current-to-future target share price. It returns training,
+calibration and test diagnostics and, on the development branch, an `evidence`
+object with the following fields:
+
+- `model_mae`: mean absolute forecast error on the chronologically held-out test block.
+- `baselines.zero_return` and `baselines.training_mean_return`: the same error metric
+  calculated on that *same* test block. The mean-return baseline is fitted only on
+  the training block.
+- `mae_skill_vs_best_baseline`: relative error reduction versus the stronger
+  of those baselines. Negative values mean the ML model performs worse.
+- `holdout_interval_coverage`: empirical test coverage of the range calibrated
+  on a separate historical block, not a guarantee of future coverage.
+- `price_age_days`, `approx_non_overlapping_holdout_windows`, and `warnings`:
+  basic validity checks. Multi-day overlapping labels can greatly overstate
+  the effective number of test observations.
+- `ready_for_live_trading`: **always false**. One holdout comparison cannot
+  establish a production trading edge.
+
+The evidence status `promising_holdout_only` means a *single historical holdout*
+met basic diagnostic thresholds, **not** that the stock is likely to rise or that
+a strategy is profitable. `limited_evidence` marks cases needing particular caution.
+No model-selection or recommendation scoring logic should consume the evidence
+status as a trading signal without a separate rigorous study.
+
+### Read-only stored data audit
+
+Run against the **restored development database**, never the original user database:
+
+```bash
+cd backend
+DB_NAME=marketpulse_restored_test python manage.py audit_market_readiness
+```
+
+This lists the proportion of active stocks with at least 300 positive stored
+closes and a price date within seven calendar days, plus stocks without any
+fundamental or news records. It **does not download data**, update the database,
+assess financial-data licensing, or certify model accuracy.
+
+For one-symbol ingestion where a provider permits the intended use, see
+`python manage.py refresh_market_data --symbol AAPL --period 5y`.
+Back up the working database before running any ingestion, and review provider
+rate limits, exchange entitlements, timestamps, and adjustment policies.
+
+### Requirements before a real public market launch
+
+1. Run a multi-market, multi-stock **purged walk-forward study** of all candidate
+   models versus trivial baselines. Use corporate-action-adjusted price histories
+   where appropriate, realistic costs, delisting/survivorship checks and frozen
+   evaluation periods. Report per-horizon and per-regime failures, not just averages.
+2. Validate data-provider commercial redistribution rights, exchange market-data
+   agreements, and the availability of delayed/realtime quotes for the proposed
+   audience. A development-only Yahoo Finance feed should not be assumed to
+   authorize a paid production product.
+3. Implement and validate production ingestion scheduling, retries, idempotent
+   upserts, source provenance, failure alerting, stale-data gating, and model
+   re-training/monitoring. A forecast based on old data must never masquerade
+   as an up-to-date signal.
+4. Deploy on an HTTPS environment with real secrets management, persistent
+   PostgreSQL backups and recovery drills, user account protections, rate
+   limiting, dependency scanning, CI/CD rollback, observability and audit trails.
+   Validate session cookies and CSRF in the *real* frontend/backend origin setup.
+5. Perform cross-user authorization tests, browser/mobile QA, accessibility,
+   billing/privacy reviews if applicable, and jurisdiction-specific legal review
+   before offering personalized investment recommendations. Financial research
+   must not be marketed as guaranteed stock-price prediction.
+6. Require a live staged smoke test on a **copy** of user market data. CI passing
+   on synthetic test data is not proof that external APIs, models and deploys work.
+
+The development branch is **not** a production release until those gates are
+demonstrably passed. The original `ai_stock_market` PostgreSQL database and
+its backup should remain untouched during branch testing.
