@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -7,6 +8,11 @@ from stocks.models import Stock
 
 
 class Portfolio(models.Model):
+    # Keep pre-existing rows unassigned until ownership can be confirmed.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="marketpulse_portfolios", null=True, blank=True,
+    )
     name = models.CharField(
         max_length=120,
         default="My Portfolio",
