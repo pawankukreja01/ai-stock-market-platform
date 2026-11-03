@@ -10,6 +10,8 @@ from datetime import date, datetime
 
 import numpy as np
 
+from ml_final_validation import calculate_forecast_metrics
+
 from ml_models import (
     calculate_mae,
     calculate_directional_accuracy,
@@ -31,6 +33,46 @@ def _parse_date(value):
         return date.fromisoformat(str(value)[:10])
     except (TypeError, ValueError) as exc:
         raise ValueError("A valid latest-price date is required.") from exc
+
+
+def assess_direction_bias(metrics):
+    """Report sign prediction imbalance; never infer profitable directional skill.
+
+    These percentages are descriptive holdout statistics, not probabilities
+    of future gains. A large predicted/observed positive-rate difference is
+    flagged as a reliability concern, not used to fit or select a model.
+    """
+    actual = metrics.get("actual_positive_rate")
+    predicted = metrics.get("predicted_positive_rate")
+    balanced = metrics.get("balanced_directional_accuracy")
+    warning = None
+
+    if actual is None or predicted is None:
+        warning = "Directional rates are unavailable for this holdout."
+    elif actual in (0, 1):
+        warning = (
+            "The held-out outcomes contain only one return direction; "
+            "directional discrimination cannot be established."
+        )
+    elif abs(predicted - actual) > 0.20:
+        bias = "positive" if predicted > actual else "negative"
+        warning = (
+            f"Directional forecasts are heavily skewed {bias}: "
+            f"{predicted:.1%} of predicted returns versus "
+            f"{actual:.1%} of observed returns are positive. "
+            "Review negative specificity and balanced directional accuracy."
+        )
+
+    return {
+        "predicted_positive_rate": predicted,
+        "actual_positive_rate": actual,
+        "balanced_directional_accuracy": balanced,
+        "directional_rate_gap_percentage_points": (
+            round((predicted - actual) * 100, 2)
+            if actual is not None and predicted is not None else None
+        ),
+        "warning": warning,
+    }
 
 
 def assess_prediction_evidence(
@@ -60,6 +102,10 @@ def assess_prediction_evidence(
     if not (np.isfinite(train).all() and np.isfinite(actual).all() and np.isfinite(forecast).all()):
         raise ValueError("Holdout values must be finite")
 
+    directional_evidence = assess_direction_bias(
+        calculate_forecast_metrics(actual, forecast)
+    )
+
     zero_predictions = predict_zero_return(train, actual)
     mean_predictions = predict_historical_mean(train, actual)
 
@@ -85,6 +131,8 @@ def assess_prediction_evidence(
     # count of disjoint label windows, NOT a statistical independence claim.
     approx_windows = len(actual) // horizon
     reasons = []
+    if directional_evidence["warning"]:
+        reasons.append(directional_evidence["warning"])
 
     if price_age_days < 0:
         reasons.append("Price history contains a future-dated last observation.")
@@ -121,6 +169,7 @@ def assess_prediction_evidence(
         "price_age_days": price_age_days,
         "holdout_observations": int(len(actual)),
         "approx_non_overlapping_holdout_windows": int(approx_windows),
+        "directional_evidence": directional_evidence,
         "model_mae": model_mae,
         "baselines": {
             "zero_return": {
