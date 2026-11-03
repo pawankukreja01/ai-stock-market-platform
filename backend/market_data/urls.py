@@ -2,6 +2,7 @@ from django.urls import path
 from .screener_views import StockScreenerView
 from .investment_simulator_views import InvestmentSimulatorView
 from .quote_views import LatestQuoteView
+from .research_readiness_views import ResearchReadinessView
 
 from .views import (
     HistoricalPriceListView,
@@ -24,6 +25,7 @@ from .sentiment_views import StockSentimentSummaryView
 from .recommendation_views import StockRecommendationsView
 
 urlpatterns = [
+    path("research-readiness/", ResearchReadinessView.as_view(), name="research-readiness"),
     path(
         "historical-prices/",
         HistoricalPriceListView.as_view(),
