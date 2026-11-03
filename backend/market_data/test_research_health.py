@@ -12,6 +12,7 @@ from django.test import SimpleTestCase, TestCase
 
 from market_data.management.commands.audit_research_health import (
     research_health_status,
+    regular_session_reference,
 )
 from market_data.models import Fundamental, HistoricalPrice, LatestQuote
 from stocks.models import Stock
@@ -57,6 +58,45 @@ class ResearchHealthStatusTests(SimpleTestCase):
         self.assertIn("invalid_ohlc_rows", result["flags"])
         self.assertIn("invalid_quote_timestamp", result["flags"])
 
+    def test_weekend_friday_close_does_not_age_as_live_quote(self):
+        sunday = datetime(2026, 11, 8, 15, 0, tzinfo=timezone.utc)
+        friday_close = datetime(2026, 11, 6, 21, 0, tzinfo=timezone.utc)
+        result = self.check(
+            now=sunday, exchange="NASDAQ", latest_quote_time=friday_close,
+        )
+        self.assertEqual(
+            result["session_context"]["regular_session_state"],
+            "outside_regular_hours",
+        )
+        self.assertNotIn("stale_quote", result["flags"])
+        self.assertGreater(result["quote_source_age_minutes"], 30)
+
+    def test_session_uses_new_york_dst_and_uk_clock(self):
+        november = datetime(2026, 11, 3, 16, 47, tzinfo=timezone.utc)
+        us, reference = regular_session_reference(
+            now=november, exchange="NASDAQ"
+        )
+        self.assertEqual(us["market"], "US")
+        self.assertEqual(us["regular_session_state"], "regular_hours")
+        self.assertEqual(reference, november)
+
+        uk, close = regular_session_reference(
+            now=november, exchange="LSE"
+        )
+        self.assertEqual(uk["market"], "UK")
+        self.assertEqual(uk["regular_session_state"], "outside_regular_hours")
+        self.assertEqual(close.hour, 16)
+        self.assertEqual(close.minute, 30)
+
+    def test_preopen_uses_previous_close(self):
+        monday = datetime(2026, 11, 9, 13, 0, tzinfo=timezone.utc)
+        _, reference = regular_session_reference(
+            now=monday, exchange="NASDAQ"
+        )
+        self.assertEqual(reference, datetime(
+            2026, 11, 6, 21, 0, tzinfo=timezone.utc
+        ))
+
     def test_missing_quote_is_not_assumed_live(self):
         result = self.check(latest_quote_time=None)
         self.assertIn("missing_quote", result["flags"])
@@ -97,6 +137,8 @@ class ResearchHealthCommandTests(TestCase):
         self.assertEqual(report["stocks"][0]["symbol"], "ABF.L")
         self.assertIn("missing_quote", report["stocks"][0]["flags"])
         self.assertEqual(report["summary"]["stocks_with_no_quarterly_statements"], 1)
+        self.assertEqual(report["summary"]["stocks_with_no_news_articles"], 1)
+        self.assertIn("news_articles_unavailable", report["stocks"][0]["availability_gaps"])
 
     def test_missing_selected_stock_is_an_error(self):
         with self.assertRaisesRegex(CommandError, "Unknown or inactive"):
