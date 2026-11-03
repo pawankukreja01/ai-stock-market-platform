@@ -132,7 +132,17 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    if len(email) > 254 or len(password) > 1024:
+        return Response(
+            {"detail": "Invalid email address or password."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        # Avoid leaking the existence of an account through the difference
+        # between a fast missing-user lookup and a slow password hash check.
+        User().set_password(password)
     if user is None or not user.is_active or not user.check_password(password):
         return Response(
             {"detail": "Invalid email address or password."},
