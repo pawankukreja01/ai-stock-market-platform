@@ -36,6 +36,12 @@ class PredictionEvidenceTests(SimpleTestCase):
         self.assertEqual(report["status"], "limited_evidence")
         self.assertFalse(report["beats_both_baselines_on_mae"])
         self.assertTrue(any("baseline" in w for w in report["warnings"]))
+        # The zero-return baseline has zero error on this fixture; relative
+        # improvement is mathematically undefined rather than negative infinity.
+        self.assertIsNone(report["mae_skill_vs_best_baseline"])
+
+    def test_negative_skill_when_baseline_has_nonzero_error(self):
+        report = self.assess(np.full(40, 0.03), np.full(40, 0.25))
         self.assertLess(report["mae_skill_vs_best_baseline"], 0)
 
     def test_stale_prices_warn_without_inventing_recency(self):
