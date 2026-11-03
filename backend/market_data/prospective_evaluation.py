@@ -19,15 +19,17 @@ def prospective_outcome(forecast, observations, *, today):
     rows = sorted(observations, key=lambda row: row["date"])
     eligible = [
         row for row in rows
-        if row["date"] > forecast.signal_date
-        and row["date"] <= today
-        and row.get("is_ohlc_valid", False)
+        if row["date"] > forecast.signal_date and row["date"] <= today
     ]
     if len(eligible) <= forecast.horizon or forecast.horizon <= 0:
         return None
-    entry = eligible[0]
-    exit_row = eligible[forecast.horizon]
-    if forecast.created_at.date() > entry["date"]:
+    window = eligible[:forecast.horizon + 1]
+    if any(not row.get("is_ohlc_valid", False) for row in window):
+        # Never silently compress the horizon by dropping an invalid session.
+        return None
+    entry = window[0]
+    exit_row = window[-1]
+    if forecast.created_at.date() >= entry["date"]:
         # The record was created after the entry price was already observable;
         # it cannot be used in honest prospective skill measurement.
         return None
