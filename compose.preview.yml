@@ -19,7 +19,10 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
-      DJANGO_DEBUG: "false"
+      # This isolated localhost-only preview terminates HTTP, not HTTPS.
+      # DEBUG=true ensures Django's Secure cookies are not silently dropped
+      # during local login. Never use this preview configuration publicly.
+      DJANGO_DEBUG: "true"
       DJANGO_SECRET_KEY: ${PREVIEW_DJANGO_SECRET_KEY:?Set PREVIEW_DJANGO_SECRET_KEY in preview.env}
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
       DJANGO_CSRF_TRUSTED_ORIGINS: "http://localhost:8088,http://127.0.0.1:8088"
