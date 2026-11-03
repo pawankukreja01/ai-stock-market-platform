@@ -748,6 +748,74 @@ Safety constraints:
  
 ---
 
+## Model accuracy and reliability roadmap (steps 22–26)
+
+The prediction endpoint and SHAP explanation were verified locally for
+ABF.L (Django HTTP 200). That confirms operation, **not predictive skill**.
+Price/volume-only experiments previously failed to outperform all three
+simple baselines across the tested AAPL, MSFT and NVDA windows.
+
+**Step 23 – Data integrity:** Existing read-only `audit_prediction_prices`
+flags invalid OHLC, suspect corporate actions, adjustment-factor changes and
+future-dated records. It does not change prices or claim that flagged changes
+are errors. Use the explicitly selected restored test database.
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py audit_prediction_prices \\
+  --symbols AAPL MSFT NVDA ABF.L
+```
+
+**Steps 24–25 – Controlled model research:** `validate_stock_forecasts`
+supports the earlier `price_volume` feature set (default) and the opt-in
+`market_aligned` feature set. In market-aligned mode, training includes
+the same market-relative features used by the live forecast API when the
+complete, local, same-market benchmark cache is available: S&P 500 for US,
+FTSE 100 for UK. Cache misses fail closed **without fetching yfinance or
+changing which features were evaluated**. This does not change the live API
+model or certify any model as accurate. Reported fold metrics and the
+three baselines use the same out-of-sample dates.
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py validate_stock_forecasts \\
+  --symbols AAPL MSFT NVDA ABF.L --model random_forest \\
+  --horizon 5 --min-train 500 --test-size 100 \\
+  --feature-set market_aligned --common-window
+```
+
+Run the price-only protocol separately to compare **feature groups**, not
+as evidence of deployable forecasting skill. Use fixed training procedures
+and a separately untouched final time window for any subsequent model
+selection; avoid tuning repeatedly against the same held-out results.
+Do not mix up one-day and five-day absolute errors. Neither mode forecasts
+reliable profitable trades by default.
+
+**Step 26 – Data-health monitoring:** The new read-only
+`audit_research_health` management command reports historical coverage,
+provider-source quote timestamp age, invalid OHLC flags, and annual/
+quarterly financial statement availability. It does not contact Yahoo,
+retrain models, send notifications or update any database.
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py audit_research_health \\
+  --symbols AAPL MSFT NVDA ABF.L
+```
+
+Use `--strict` to exit nonzero when a data-quality/freshness issue is
+found, or `--output /path/to/new-report.json` to write a new JSON report
+without overwriting an existing file. **Stale quotes outside trading
+hours are expected**: this monitor measures source timestamps rather than
+asserting the market is open. Missing quarterly reports are availability
+gaps, not fabricated zero income. This checks data health, not model
+accuracy. Scheduling and production alerting require a separate future
+implementation and operational review.
+
+The protected original `ai_stock_market` database and its backup remain
+unchanged. These commands are for the explicitly selected restored test
+database. No migrations or trading operations are required.
+
+---
+
 ## Forecast evidence and launch gates
 
 The ML prediction API at `GET /api/ml-prediction/?symbol=AAPL&horizon=5&model=random_forest`
