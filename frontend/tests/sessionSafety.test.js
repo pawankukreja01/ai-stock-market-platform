@@ -71,3 +71,27 @@ test("unavailable browser storage does not raise uncaught exceptions", () => {
     delete globalThis.window;
   }
 });
+
+test("private-mode storage write failures fall back to session storage", () => {
+  const map = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => { throw new Error("Quota denied"); },
+      removeItem: () => { throw new Error("Denied"); },
+    },
+    sessionStorage: {
+      getItem: key => map.has(key) ? map.get(key) : null,
+      setItem: (key, value) => map.set(key, String(value)),
+      removeItem: key => map.delete(key),
+    },
+  };
+  try {
+    assert.doesNotThrow(markLogoutPending);
+    assert.equal(logoutPending(), true);
+    clearLogoutPending();
+    assert.equal(logoutPending(), false);
+  } finally {
+    delete globalThis.window;
+  }
+});
