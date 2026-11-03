@@ -140,34 +140,50 @@ class BenchmarkComparisonView(APIView):
                 status=400,
             )
 
-        sector_etf = self.SECTOR_ETFS.get(
-            sector,
-            "SPY",
-        )
+        exchange = request.query_params.get("exchange", "").strip()
+        market = market_for_exchange(exchange) if exchange else "US"
+        if market not in ("US", "UK"):
+            return Response(
+                {"error": "Unsupported exchange for benchmark comparison."},
+                status=400,
+            )
 
-        benchmarks = {
-            "sp500": {
-                "symbol": "^GSPC",
-                "name": "S&P 500",
-            },
-            "nasdaq100": {
-                "symbol": "^NDX",
-                "name": "NASDAQ-100",
-            },
-            "sector": {
-                "symbol": sector_etf,
-                "name": (
-                    f"{sector_etf} Sector ETF"
-                    if sector_etf != "SPY"
-                    else "S&P 500 ETF"
-                ),
-            },
-        }
+        if market == "UK":
+            # Avoid applying US sector ETFs and NASDAQ comparisons to UK
+            # equities. A missing comparison is preferable to a wrong one.
+            benchmarks = {
+                "sp500": {"symbol": "^FTSE", "name": "FTSE 100"},
+                "nasdaq100": {"symbol": None, "name": "Not applicable"},
+                "sector": {"symbol": None, "name": "UK sector benchmark unavailable"},
+            }
+        else:
+            sector_etf = self.SECTOR_ETFS.get(sector, "SPY")
+            benchmarks = {
+                "sp500": {"symbol": "^GSPC", "name": "S&P 500"},
+                "nasdaq100": {"symbol": "^NDX", "name": "NASDAQ-100"},
+                "sector": {
+                    "symbol": sector_etf,
+                    "name": (
+                        f"{sector_etf} Sector ETF"
+                        if sector_etf != "SPY"
+                        else "S&P 500 ETF"
+                    ),
+                },
+            }
 
         result = {}
 
         try:
             for key, benchmark in benchmarks.items():
+                if not benchmark["symbol"]:
+                    result[key] = {
+                        "symbol": None,
+                        "name": benchmark["name"],
+                        "dates": [],
+                        "close": [],
+                    }
+                    continue
+
                 ticker = yf.Ticker(
                     benchmark["symbol"]
                 )
@@ -214,6 +230,7 @@ class BenchmarkComparisonView(APIView):
                     "start_date": start_date,
                     "end_date": end_date,
                     "sector": sector,
+                    "market": market,
                     "benchmarks": result,
                 }
             )
