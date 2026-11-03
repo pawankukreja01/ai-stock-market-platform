@@ -166,7 +166,9 @@ class VerifiedLoginSessionTests(TestCase):
             "DEFAULT_THROTTLE_CLASSES": [],
             "DEFAULT_THROTTLE_RATES": {"auth_login": "2/hour"},
         }):
+            from accounts.auth_views import LoginRateThrottle
             cache.clear()
+            self.assertEqual(LoginRateThrottle().num_requests, 2)
             responses = [
                 self.client.post(
                     reverse("auth-login"),
