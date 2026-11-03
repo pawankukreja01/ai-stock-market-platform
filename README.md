@@ -793,8 +793,14 @@ reliable profitable trades by default.
 **Step 26 – Data-health monitoring:** The new read-only
 `audit_research_health` management command reports historical coverage,
 provider-source quote timestamp age, invalid OHLC flags, and annual/
-quarterly financial statement availability. It does not contact Yahoo,
-retrain models, send notifications or update any database.
+quarterly financial statement availability, plus missing news articles.
+Quote freshness uses approximate exchange-local US/UK regular trading
+hours: a Friday-close quote isn't treated as progressively stale over
+a normal weekend. The report includes actual quote age and the age
+relative to the current/most recent ordinary session reference.
+**This is not a verified trading calendar:** holidays, early closes and
+trading halts can make freshness flags inaccurate. It does not contact
+Yahoo, retrain models, send notifications or update any database.
 
 ```bash
 DB_NAME=marketpulse_restored_test python manage.py audit_research_health \\
@@ -803,12 +809,13 @@ DB_NAME=marketpulse_restored_test python manage.py audit_research_health \\
 
 Use `--strict` to exit nonzero when a data-quality/freshness issue is
 found, or `--output /path/to/new-report.json` to write a new JSON report
-without overwriting an existing file. **Stale quotes outside trading
-hours are expected**: this monitor measures source timestamps rather than
-asserting the market is open. Missing quarterly reports are availability
-gaps, not fabricated zero income. This checks data health, not model
-accuracy. Scheduling and production alerting require a separate future
-implementation and operational review.
+without overwriting an existing file. Stale quotes **during regular
+trading hours** need investigating; outside regular hours, quote age
+is compared with the most recent ordinary weekday close instead of the
+current wall clock. Missing quarterly reports or news articles are
+availability gaps, not fabricated zero results. This checks data health,
+not model accuracy. Scheduling and production alerting require a
+separate future implementation and operational review.
 
 The protected original `ai_stock_market` database and its backup remain
 unchanged. These commands are for the explicitly selected restored test
