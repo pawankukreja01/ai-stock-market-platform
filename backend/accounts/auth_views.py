@@ -19,7 +19,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
 
 from .email_utils import (
     EMAIL_VERIFICATION_SALT,
@@ -34,8 +34,16 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-class LoginRateThrottle(AnonRateThrottle):
+class LoginRateThrottle(SimpleRateThrottle):
+    """Throttle login attempts per remote IP even for already-logged-in users."""
+
     scope = "auth_login"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": self.get_ident(request),
+        }
 
 
 class VerificationRateThrottle(AnonRateThrottle):
