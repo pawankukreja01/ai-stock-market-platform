@@ -702,6 +702,52 @@ and do not run duplicate monitors for the same watchlist.
 
 ---
 
+## Controlled personal research data sync
+
+Latest intraday quotes and historical OHLC records are separate datasets.
+The quote monitor does not update the history used for daily indicators
+and ML training. To preview a small historical update without fetching
+external data or writing to the database:
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py sync_personal_research \\
+  --symbols AAPL MSFT NVDA --period 1y
+```
+
+The command prints a DRY RUN. To actually refresh the selected stocks'
+historical prices, add `--execute` after reviewing the plan:
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py sync_personal_research \\
+  --symbols AAPL MSFT NVDA --period 1y --execute
+```
+
+Use `--include-news`, `--include-sentiment` (requires news), and/or
+`--include-fundamentals` only when needed. News and fundamental downloads
+are provider-dependent; sentiment analysis may require cached/downloaded
+ML assets. A failed step is reported but does not erase existing records,
+and independent successful steps remain committed. The history downloader
+uses upserts, including existing records within the specified period: this
+is **not** a strictly append-only synchronization.
+
+Safety constraints:
+
+- The command permits writes **only** when both the explicit environment
+  variable and configured database name equal `marketpulse_restored_test`.
+  It refuses the original `ai_stock_market` database.
+- The default is read-only dry run. It requires `--execute` to call ingestion.
+- At most ten active symbols can be selected. Yahoo Finance may delay or
+  throttle data. There is a configurable per-ticker delay (default two seconds).
+- Each invocation performs one batch, not a background schedule. Use a
+  separately configured scheduler only after manual verification.
+- This refresh updates historical prices (and optional research inputs);
+  it does **not** retrain models or certify forecasting skill.
+- Preserve the original backup and do not run bulk ingestions before
+  verifying the small watchlist.
+ 
+---
+
 ## Forecast evidence and launch gates
 
 The ML prediction API at `GET /api/ml-prediction/?symbol=AAPL&horizon=5&model=random_forest`
