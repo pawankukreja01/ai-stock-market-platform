@@ -55,46 +55,24 @@
 <script setup>
 import { ref } from "vue";
 import { getResearchReadiness } from "../services/api";
+import { parseResearchSymbols, formatReadinessDate, sessionContextLabel, readableReadinessFlag } from "../utils/researchHealth.js";
 
 const symbols = ref("");
 const loading = ref(false);
 const error = ref("");
 const report = ref(null);
-const labels = {
-  insufficient_history: "Insufficient price history",
-  missing_price_history: "Missing price history",
-  stale_price_history: "Old historical prices",
-  future_price_date: "Future-dated price",
-  invalid_ohlc_rows: "Invalid OHLC data",
-  missing_quote: "No stored quote",
-  stale_quote: "Old quote source",
-  invalid_quote_timestamp: "Invalid quote timestamp",
-  annual_fundamentals_unavailable: "Annual statements",
-  quarterly_fundamentals_unavailable: "Quarterly statements",
-  news_articles_unavailable: "News articles",
-  news_publication_dates_unavailable: "News publication dates",
-};
-const readable = (flag) => labels[flag] || flag.replaceAll("_", " ");
+const readable = readableReadinessFlag;
 const number = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString() : "Unavailable";
-function displayDate(value) {
-  if (!value) return "Unavailable";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unavailable" : date.toLocaleString();
-}
-function sessionLabel(data) {
-  if (data?.regular_session_state === "regular_hours") return "Regular hours";
-  if (data?.regular_session_state === "outside_regular_hours") return "Outside regular hours";
-  return "Unknown";
-}
+const displayDate = formatReadinessDate;
+const sessionLabel = sessionContextLabel;
 async function load() {
   if (loading.value) return;
-  const query = symbols.value.trim().toUpperCase();
-  if (query) {
-    const tokens = query.split(",").map(x => x.trim());
-    if (tokens.length > 20 || tokens.some(x => !/^[A-Z0-9.^=-]{1,20}$/.test(x))) {
-      error.value = "Enter 1–20 valid comma-separated stock symbols.";
-      return;
-    }
+  let query;
+  try {
+    query = parseResearchSymbols(symbols.value);
+  } catch (exc) {
+    error.value = exc.message;
+    return;
   }
   loading.value = true;
   error.value = "";
