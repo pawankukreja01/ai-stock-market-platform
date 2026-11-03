@@ -28,7 +28,7 @@
         <p>Use the rankings as a shortlist to investigate. A high score does not tell you how much a stock will rise.</p>
       </div>
       <div class="guide-steps">
-        <div><span class="guide-number">01</span><strong>Choose your horizon</strong><p>Set your time frame and risk comfort. The current ranking adapts to risk tolerance, but not yet to holding period.</p></div>
+        <div><span class="guide-number">01</span><strong>Choose your horizon</strong><p>Set your time frame and risk comfort. The current research ranking adjusts its evidence weights for your selected holding period; these adjustments are not validated return forecasts.</p></div>
         <div><span class="guide-number">02</span><strong>Read the evidence</strong><p>Check price freshness, fundamentals, market risk, and news sentiment for every candidate.</p></div>
         <div><span class="guide-number">03</span><strong>Compare before acting</strong><p>Research the stock page and potential downside. Forecasts are not currently part of these rankings.</p></div>
       </div>
@@ -157,7 +157,7 @@
             <h2>Ranked stocks</h2>
             <p>
               Showing {{ data.results?.length ?? 0 }} stocks.
-              Scores are relative percentiles, not probabilities of profit.
+              Scores are relative percentiles, not probabilities of profit. Your selected horizon adjusts provisional scoring weights.
             </p>
           </div>
           <span class="pill">{{ data.risk_tolerance }} risk profile</span>
@@ -342,7 +342,7 @@
         <div class="section-heading">
           <div>
             <h2>Methodology and limitations</h2>
-            <p>Understand what this analysis does and does not measure.</p>
+            <p>Scoring weights vary with risk preference and time horizon. They are provisional research heuristics, not a validated prediction of future performance.</p>
           </div>
         </div>
 
