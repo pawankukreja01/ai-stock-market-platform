@@ -8,6 +8,7 @@ from ml_explainability import explain_prediction
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 
 from stocks.models import Stock
@@ -77,6 +78,9 @@ class MLReturnPredictionView(APIView):
     This API predicts future returns, not guaranteed
     future prices.
     """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ml_prediction"
 
     DEFAULT_MODEL = "random_forest"
     DEFAULT_CONFIDENCE = 0.90
