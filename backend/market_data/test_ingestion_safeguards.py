@@ -90,3 +90,30 @@ class HistoricalRevisionGuardTests(TestCase):
         changes = Command._large_adjustment_revisions(before, incoming)
         self.assertEqual(len(changes), 1)
         self.assertEqual(changes[0][0], date(2021, 11, 1))
+
+    def test_mixed_incoming_adjustment_conventions_flagged(self):
+        from market_data.management.commands.ingest_stock_history import Command
+        incoming = {
+            date(2021, 10, 29): 0.998488,
+            date(2021, 11, 1): 0.858353,
+            date(2021, 11, 2): 0.858353,
+        }
+        jumps = Command._incoming_factor_jumps(incoming)
+        self.assertEqual(len(jumps), 1)
+        self.assertEqual(jumps[0][0], date(2021, 11, 1))
+
+    def test_new_history_with_discontinuous_adjustments_is_rejected(self):
+        self.saved.delete()
+        with patch(
+            "market_data.management.commands.ingest_stock_history.yf.Ticker"
+        ) as factory:
+            ticker = factory.return_value
+            history = self.history()
+            history.loc[history.index[0], "Adj Close"] = 1809.7595
+            history.loc[history.index[1], "Adj Close"] = 1560.4856
+            ticker.history.return_value = history
+            with self.assertRaisesRegex(CommandError, "discontinuities"):
+                call_command("ingest_stock_history", "ABF.L")
+        self.assertFalse(
+            HistoricalPrice.objects.filter(stock=self.stock).exists()
+        )
