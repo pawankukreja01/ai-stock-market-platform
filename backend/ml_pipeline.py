@@ -103,7 +103,7 @@ def run_horizon_experiment(
         X,
         y,
         test_size=test_size,
-        gap=horizon,
+        gap=horizon + 1,
     )
 
     output = run_all_models(

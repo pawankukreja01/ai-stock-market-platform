@@ -88,6 +88,310 @@
       </p>
     </section>
 
+    <section class="panel strategy-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">OUT-OF-SAMPLE STRATEGY TESTING</p>
+          <h2>Strategy backtesting</h2>
+          <p>Compare a walk-forward ML strategy with Buy &amp; Hold and SMA 200 using the selected stock's available history.</p>
+        </div>
+        <span class="strategy-tag">Historical research</span>
+      </div>
+
+      <form class="simulation-form backtest-form" @submit.prevent="runStrategyBacktest">
+        <label class="field">
+          <span>ML model</span>
+          <select v-model="backtestForm.model">
+            <option value="linear_regression">Linear Regression</option>
+            <option value="random_forest">Random Forest</option>
+            <option value="xgboost">XGBoost</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Prediction horizon</span>
+          <select v-model="backtestForm.horizon">
+            <option value="1">1 trading day</option>
+            <option value="5">5 trading days</option>
+            <option value="20">20 trading days</option>
+            <option value="60">60 trading days</option>
+            <option value="126">126 trading days</option>
+            <option value="252">252 trading days</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Transaction cost (bps)</span>
+          <input v-model="backtestForm.transaction_cost_bps" type="number" min="0" step="any" required />
+        </label>
+
+        <label class="field">
+          <span>Slippage (bps)</span>
+          <input v-model="backtestForm.slippage_bps" type="number" min="0" step="any" required />
+        </label>
+
+        <label class="field">
+          <span>Prediction threshold (decimal return)</span>
+          <input v-model="backtestForm.threshold" type="number" step="any" required />
+        </label>
+
+        <div class="form-actions">
+          <button class="primary-button" type="submit" :disabled="backtestLoading || loadingStocks || !form.symbol">
+            {{ backtestLoading ? "Running walk-forward test…" : "Run strategy backtest" }}
+          </button>
+        </div>
+      </form>
+
+      <p class="form-note">
+        The API uses expanding-window walk-forward training and needs at least 1,200 stored historical observations. A 0.01 threshold means a predicted return greater than 1%. Signals generated at a close execute at the next session close; the ML strategy then holds for the selected number of return sessions. Entry and exit costs are included. Historical returns use unadjusted closes, so dividends are excluded. Longer horizons may require more than 1,200 observations.
+      </p>
+    </section>
+
+    <div v-if="backtestError" class="error-message">
+      <strong>Strategy backtest could not be completed</strong>
+      <p>{{ backtestError }}</p>
+    </div>
+
+    <div v-if="backtestLoading" class="loading-message">
+      Training walk-forward folds and calculating strategy results. This may take a little while.
+    </div>
+
+    <template v-if="backtest">
+      <section class="summary-grid">
+        <article class="summary-card">
+          <span class="summary-label">Out-of-sample period</span>
+          <strong class="backtest-summary-value">{{ backtest.backtest_period.start_date }}</strong>
+          <small>to {{ backtest.backtest_period.end_date }}</small>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">Prediction horizon</span>
+          <strong>{{ backtest.horizon_label }}</strong>
+          <small>{{ backtest.horizon }} trading days</small>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">Walk-forward folds</span>
+          <strong>{{ backtest.configuration.folds }}</strong>
+          <small>{{ backtest.final_validation?.metrics?.selected_model?.observations ?? 0 }} forecast observations evaluated</small>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">Evaluation observations</span>
+          <strong>{{ backtest.backtest_period.observations }}</strong>
+          <small>Daily returns in strategy comparison</small>
+        </article>
+      </section>
+
+      <section class="panel chart-panel">
+        <div class="panel-heading chart-heading">
+          <div>
+            <h2>{{ backtest.symbol }} strategy equity curves</h2>
+            <p>Growth of a normalised 1.00 starting value over the out-of-sample period.</p>
+          </div>
+          <span class="strategy-tag">{{ backtest.model_name }}</span>
+        </div>
+        <div ref="backtestChartElement" class="growth-chart" role="img" :aria-label="`${backtest.symbol} walk-forward strategy equity curves`"></div>
+      </section>
+
+      <section class="panel backtest-table-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Strategy comparison</h2>
+            <p>All strategies are measured over the same out-of-sample window and cost assumptions.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="backtest-table">
+            <thead>
+              <tr>
+                <th>Strategy</th><th>Total return</th><th>Annualised return</th><th>Annualised volatility</th><th>Max drawdown</th><th>Sharpe</th><th>Sortino</th><th>Win rate</th><th>Profit factor</th><th>Trades</th><th>Trading cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in backtestStrategyRows" :key="row.key">
+                <td><strong>{{ row.label }}</strong></td>
+                <td>{{ backtestPercent(row.metrics.cumulative_return) }}</td>
+                <td>{{ backtestPercent(row.metrics.annualised_return) }}</td>
+                <td>{{ backtestPercent(row.metrics.annualised_volatility) }}</td>
+                <td>{{ backtestPercent(row.metrics.maximum_drawdown) }}</td>
+                <td>{{ backtestNumber(row.metrics.sharpe_ratio) }}</td>
+                <td>{{ backtestNumber(row.metrics.sortino_ratio) }}</td>
+                <td>{{ backtestPercent(row.metrics.win_rate) }}</td>
+                <td>{{ backtestNumber(row.metrics.profit_factor) }}</td>
+                <td>{{ row.metrics.trades ?? "—" }}</td>
+                <td>{{ backtestPercent(row.metrics.total_trading_cost) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="backtest.analysis?.interpretation" class="analysis-copy">{{ backtest.analysis.interpretation }}</p>
+      </section>
+
+      <section class="panel backtest-table-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Trade &amp; cost diagnostics</h2>
+            <p>Completed round trips, market exposure, gross-versus-net returns and execution friction for each strategy.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="backtest-table diagnostics-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Completed trades</th>
+                <th>Win rate</th>
+                <th>Avg holding (sessions)</th>
+                <th>Time invested</th>
+                <th>Gross return</th>
+                <th>Net return</th>
+                <th>Gross-to-net drag</th>
+                <th>Transaction costs*</th>
+                <th>Slippage*</th>
+                <th>Turnover (x)</th>
+                <th>Avg winning trade</th>
+                <th>Avg losing trade</th>
+                <th>Profit factor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in backtestStrategyRows" :key="`diagnostics-${row.key}`">
+                <td><strong>{{ row.label }}</strong></td>
+                <td>{{ row.metrics.completed_trades ?? row.metrics.trades ?? 0 }}</td>
+                <td>{{ backtestPercent(row.metrics.win_rate) }}</td>
+                <td>{{ backtestNumber(row.metrics.average_holding_sessions) }}</td>
+                <td>{{ backtestPercent(row.metrics.exposure_pct) }}</td>
+                <td>{{ backtestPercent(row.metrics.gross_cumulative_return) }}</td>
+                <td>{{ backtestPercent(row.metrics.net_cumulative_return ?? row.metrics.cumulative_return) }}</td>
+                <td>{{ backtestPercent(row.metrics.gross_to_net_return_drag) }}</td>
+                <td>{{ backtestPercent(row.metrics.total_transaction_cost) }}</td>
+                <td>{{ backtestPercent(row.metrics.total_slippage_cost) }}</td>
+                <td>{{ backtestNumber(row.metrics.total_turnover) }}</td>
+                <td>{{ backtestPercent(row.metrics.average_winning_trade_return) }}</td>
+                <td>{{ backtestPercent(row.metrics.average_losing_trade_return) }}</td>
+                <td>{{ backtestNumber(row.metrics.profit_factor) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="analysis-copy diagnostics-note">
+          <p><strong>Closed-trade win rate:</strong> calculated from completed round trips, not daily returns. Buy &amp; Hold is normally one continuous position; a 100% win rate means that single completed position was profitable.</p>
+          <p><strong>*Cost units:</strong> transaction cost and slippage are summed as return-space deductions against the normalised starting capital. They are not USD cash fee totals. Gross-to-net drag is the difference between compounded gross and net strategy returns.</p>
+          <p><strong>Turnover:</strong> sum of absolute changes in portfolio exposure. One fully closed long round trip contributes approximately 2.00x.</p>
+        </div>
+      </section>
+
+      <section class="panel backtest-table-panel trade-ledgers-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Completed-trade ledger</h2>
+            <p>Individual entries and exits used to calculate completed-trade statistics.</p>
+          </div>
+        </div>
+        <details v-for="row in backtestStrategyRows" :key="`trade-ledger-${row.key}`" class="trade-ledger-details">
+          <summary>{{ row.label }} · {{ row.trades.length }} completed trades</summary>
+          <div v-if="row.trades.length" class="table-scroll">
+            <table class="backtest-table trade-ledger-table">
+              <thead>
+                <tr><th>#</th><th>Entry date</th><th>Exit date</th><th>Holding sessions</th><th>Gross trade return</th><th>Net trade return</th><th>Transaction cost*</th><th>Slippage*</th><th>Combined cost*</th><th>Outcome</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(trade, tradeIndex) in row.trades" :key="`${row.key}-${trade.entry_date}-${tradeIndex}`">
+                  <td>{{ tradeIndex + 1 }}</td>
+                  <td>{{ backtestTradeDate(trade.entry_date) }}</td>
+                  <td>{{ backtestTradeDate(trade.exit_date) }}</td>
+                  <td>{{ trade.holding_sessions ?? "—" }}</td>
+                  <td>{{ backtestPercent(trade.gross_return) }}</td>
+                  <td>{{ backtestPercent(trade.net_return ?? trade.return) }}</td>
+                  <td>{{ backtestPercent(trade.transaction_cost) }}</td>
+                  <td>{{ backtestPercent(trade.slippage_cost) }}</td>
+                  <td>{{ backtestPercent(trade.total_cost) }}</td>
+                  <td>{{ Number(trade.net_return ?? trade.return) > 0 ? "Win" : Number(trade.net_return ?? trade.return) < 0 ? "Loss" : "Flat" }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="empty-ledger">No completed trades were recorded for this strategy and test window.</p>
+        </details>
+        <p class="ledger-footnote">*Cost values use the same normalised return-space units described above; they are not currency amounts.</p>
+      </section>
+
+      <section class="panel backtest-table-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Forecast validation against simple baselines</h2>
+            <p>Regression error and direction metrics for the same out-of-sample forecast dates.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="backtest-table validation-table">
+            <thead><tr><th>Forecast source</th><th>MAE</th><th>RMSE</th><th>Directional accuracy</th><th>Balanced directional accuracy</th><th>Observations</th></tr></thead>
+            <tbody>
+              <tr v-for="row in backtestValidationRows" :key="row.key">
+                <td><strong>{{ row.label }}</strong></td>
+                <td>{{ backtestPercent(row.mae) }}</td>
+                <td>{{ backtestPercent(row.rmse) }}</td>
+                <td>{{ backtestPercent(row.directional_accuracy) }}</td>
+                <td>{{ backtestPercent(row.balanced_directional_accuracy) }}</td>
+                <td>{{ row.observations }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel backtest-table-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Transaction-cost and slippage sensitivity</h2>
+            <p>{{ backtest.sensitivity.grid.scenario_count }} scenarios; the same OOS predictions are reused while frictions change.</p>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="backtest-table sensitivity-table">
+            <thead><tr><th>Transaction cost</th><th>Slippage</th><th>Combined friction</th><th>ML gross return</th><th>ML net return</th><th>Return drag</th><th>ML transaction costs*</th><th>ML slippage*</th><th>ML annualised return</th><th>ML max drawdown</th><th>Selected</th></tr></thead>
+            <tbody>
+              <tr v-for="scenario in backtestSensitivityRows" :key="scenario.scenario_id" :class="{ 'selected-scenario': scenario.is_selected_configuration }">
+                <td>{{ backtestNumber(scenario.transaction_cost_bps) }} bps</td>
+                <td>{{ backtestNumber(scenario.slippage_bps) }} bps</td>
+                <td>{{ backtestNumber(scenario.combined_friction_bps) }} bps</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.gross_cumulative_return) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.net_cumulative_return ?? scenario.mlMetrics.cumulative_return) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.gross_to_net_return_drag) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.total_transaction_cost) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.total_slippage_cost) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.annualised_return) }}</td>
+                <td>{{ backtestPercent(scenario.mlMetrics.maximum_drawdown) }}</td>
+                <td>{{ scenario.is_selected_configuration ? "Yes" : "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p class="form-note result-note">*Transaction-cost and slippage totals are expressed as return-space deductions against the normalised starting capital, not absolute broker fees in USD. Gross-to-net drag is the compounded gross return less the compounded net return.</p>
+
+      <details class="panel folds-panel">
+        <summary>Walk-forward fold details ({{ backtest.folds.length }} folds)</summary>
+        <div class="table-scroll">
+          <table class="backtest-table">
+            <thead><tr><th>Fold</th><th>Train observations</th><th>Test observations</th><th>Gap</th><th>Train start</th><th>Train end</th><th>Test start</th><th>Test end</th></tr></thead>
+            <tbody>
+              <tr v-for="fold in backtest.folds" :key="fold.fold">
+                <td>{{ fold.fold }}</td><td>{{ fold.train_size }}</td><td>{{ fold.test_size }}</td><td>{{ fold.gap }}</td><td>{{ fold.train_start_date || "—" }}</td><td>{{ fold.train_end_date || "—" }}</td><td>{{ fold.test_start_date || "—" }}</td><td>{{ fold.test_end_date || "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <section class="assumptions">
+        <h3>Backtest methodology and limitations</h3>
+        <p v-for="(note, index) in backtest.notes" :key="index">{{ note }}</p>
+        <p v-for="(limitation, index) in (backtest.final_validation?.limitations || [])" :key="`validation-limitation-${index}`">{{ limitation }}</p>
+        <p><strong>Price basis:</strong> {{ backtest.price_basis?.description }}</p>
+        <p>These are historical research results, not investment advice or a forecast of future returns. Model performance must be monitored on genuinely new data before being relied upon.</p>
+      </section>
+    </template>
+
     <div v-if="error" class="error-message">
       <strong>Simulation could not be completed</strong>
       <p>{{ error }}</p>
@@ -250,6 +554,7 @@
 
 <script setup>
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -262,6 +567,7 @@ import Plotly from "plotly.js-finance-dist-min";
 import {
   getStocks,
   getInvestmentSimulation,
+  getBacktestResults,
 } from "../services/api";
 
 const stocks = ref([]);
@@ -270,6 +576,50 @@ const loading = ref(false);
 const error = ref("");
 const simulation = ref(null);
 const chartElement = ref(null);
+
+const backtest = ref(null);
+const backtestChartElement = ref(null);
+const backtestLoading = ref(false);
+const backtestError = ref("");
+const backtestForm = reactive({
+  model: "random_forest",
+  horizon: "5",
+  transaction_cost_bps: "5",
+  slippage_bps: "5",
+  threshold: "0",
+});
+
+const backtestStrategyRows = computed(() => {
+  const strategies = backtest.value?.strategies || {};
+  const modelName = backtest.value?.model_name || "Selected model";
+
+  return [
+    { key: "ml", label: `${modelName} strategy`, metrics: strategies.ml?.metrics, trades: strategies.ml?.trades || [] },
+    { key: "buy_and_hold", label: "Buy & Hold", metrics: strategies.buy_and_hold?.metrics, trades: strategies.buy_and_hold?.trades || [] },
+    { key: "sma", label: "SMA 200", metrics: strategies.sma?.metrics, trades: strategies.sma?.trades || [] },
+  ].filter((row) => row.metrics);
+});
+
+const backtestValidationRows = computed(() => {
+  const metrics = backtest.value?.final_validation?.metrics || {};
+  const labels = [
+    ["selected_model", backtest.value?.model_name || "Selected model"],
+    ["zero_return", "Zero-return baseline"],
+    ["historical_mean", "Historical-mean baseline"],
+    ["momentum", "Momentum baseline"],
+  ];
+
+  return labels
+    .filter(([key]) => metrics[key])
+    .map(([key, label]) => ({ key, label, ...metrics[key] }));
+});
+
+const backtestSensitivityRows = computed(() => {
+  return (backtest.value?.sensitivity?.scenarios || []).map((scenario) => ({
+    ...scenario,
+    mlMetrics: scenario.strategies?.ml || {},
+  }));
+});
 
 function localDateString(date) {
   const year = date.getFullYear();
@@ -403,6 +753,114 @@ async function runSimulation() {
   }
 }
 
+async function runStrategyBacktest() {
+  backtestError.value = "";
+
+  if (!form.symbol) {
+    backtestError.value = "Please select a stock before running a strategy backtest.";
+    return;
+  }
+
+  const transactionCost = Number(backtestForm.transaction_cost_bps);
+  const slippage = Number(backtestForm.slippage_bps);
+  const threshold = Number(backtestForm.threshold);
+  const horizon = Number(backtestForm.horizon);
+
+  if (
+    !Number.isFinite(transactionCost) ||
+    !Number.isFinite(slippage) ||
+    !Number.isFinite(threshold) ||
+    transactionCost < 0 ||
+    slippage < 0
+  ) {
+    backtestError.value = "Costs and threshold must be finite numbers; costs cannot be negative.";
+    return;
+  }
+
+  backtestLoading.value = true;
+  backtest.value = null;
+
+  try {
+    const result = await getBacktestResults(
+      form.symbol,
+      horizon,
+      backtestForm.model,
+      transactionCost,
+      slippage,
+      threshold
+    );
+
+    backtest.value = result;
+    await nextTick();
+    await renderBacktestChart();
+  } catch (requestError) {
+    backtestError.value = getErrorMessage(requestError);
+  } finally {
+    backtestLoading.value = false;
+  }
+}
+
+async function renderBacktestChart() {
+  const result = backtest.value;
+  if (!backtestChartElement.value || !result?.strategies) return;
+
+  const definitions = [
+    { key: "ml", label: `ML · ${result.model_name}`, color: "#2563eb" },
+    { key: "buy_and_hold", label: "Buy & Hold", color: "#16a34a" },
+    { key: "sma", label: "SMA 200", color: "#d97706" },
+  ];
+
+  const traces = definitions
+    .map((definition) => {
+      const curve = result.strategies[definition.key]?.equity_curve;
+      if (!curve || !Array.isArray(curve.dates) || !Array.isArray(curve.values)) return null;
+
+      return {
+        x: [result.backtest_period.start_date, ...curve.dates],
+        y: [1, ...curve.values.map(Number)],
+        type: "scatter",
+        mode: "lines",
+        name: definition.label,
+        line: { color: definition.color, width: 2.4 },
+        hovertemplate: "%{x}<br>Growth of 1.00: %{y:.4f}<extra></extra>",
+      };
+    })
+    .filter(Boolean);
+
+  await Plotly.react(
+    backtestChartElement.value,
+    traces,
+    {
+      autosize: true,
+      height: 420,
+      margin: { l: 70, r: 25, t: 20, b: 60 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "Inter, -apple-system, BlinkMacSystemFont, sans-serif", color: "#64748b", size: 12 },
+      hovermode: "x unified",
+      legend: { orientation: "h", x: 0, y: 1.12 },
+      xaxis: { title: "Date", type: "date", gridcolor: "#eef2f7", linecolor: "#dbe3ed" },
+      yaxis: { title: "Growth of 1.00", tickformat: ".2f", gridcolor: "#eef2f7", zerolinecolor: "#cbd5e1" },
+    },
+    { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["select2d", "lasso2d"] }
+  );
+}
+
+function backtestPercent(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return `${(Number(value) * 100).toFixed(2)}%`;
+}
+
+function backtestNumber(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return Number(value).toFixed(2);
+}
+
+function backtestTradeDate(value) {
+  if (!value) return "—";
+  return String(value).slice(0, 10);
+}
+
 async function renderChart() {
   const data = simulation.value;
 
@@ -508,6 +966,10 @@ function handleResize() {
   if (chartElement.value && simulation.value) {
     Plotly.Plots.resize(chartElement.value);
   }
+
+  if (backtestChartElement.value && backtest.value) {
+    Plotly.Plots.resize(backtestChartElement.value);
+  }
 }
 
 function money(value) {
@@ -571,6 +1033,10 @@ onBeforeUnmount(() => {
 
   if (chartElement.value) {
     Plotly.purge(chartElement.value);
+  }
+
+  if (backtestChartElement.value) {
+    Plotly.purge(backtestChartElement.value);
   }
 });
 </script>
@@ -909,6 +1375,174 @@ h3 {
   margin: 7px 0;
 }
 
+.strategy-tag {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.backtest-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backtest-form .form-actions {
+  align-items: stretch;
+}
+
+.backtest-summary-value {
+  font-size: 18px !important;
+}
+
+.backtest-table-panel {
+  min-width: 0;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.backtest-table {
+  width: 100%;
+  min-width: 1050px;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: right;
+}
+
+.backtest-table th,
+.backtest-table td {
+  padding: 12px 13px;
+  border-bottom: 1px solid #eef2f7;
+  white-space: nowrap;
+}
+
+.backtest-table th {
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.backtest-table th:first-child,
+.backtest-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  background: #fff;
+}
+
+.backtest-table th:first-child {
+  background: #f8fafc;
+}
+
+.backtest-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.backtest-table strong {
+  color: #0f172a;
+}
+
+.analysis-copy {
+  margin: 0;
+  padding: 15px 18px;
+  border-top: 1px solid #eef2f7;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.selected-scenario td {
+  background: #eff6ff;
+  font-weight: 700;
+}
+
+.selected-scenario td:first-child {
+  background: #eff6ff;
+}
+
+.folds-panel {
+  padding: 0;
+}
+
+.folds-panel summary {
+  padding: 18px 22px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.diagnostics-table,
+.trade-ledger-table {
+  min-width: 1450px;
+}
+
+.trade-ledgers-panel .panel-heading {
+  border-bottom: 1px solid #eef2f7;
+}
+
+.trade-ledger-details {
+  border-bottom: 1px solid #eef2f7;
+}
+
+.trade-ledger-details:last-of-type {
+  border-bottom: 0;
+}
+
+.trade-ledger-details summary {
+  padding: 15px 22px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.trade-ledger-details[open] summary {
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fafc;
+}
+
+.trade-ledger-table {
+  min-width: 1100px;
+}
+
+.diagnostics-note p {
+  margin: 4px 0;
+}
+
+.empty-ledger,
+.ledger-footnote {
+  margin: 0;
+  padding: 13px 22px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ledger-footnote {
+  border-top: 1px solid #eef2f7;
+  color: #94a3b8;
+}
+
+.folds-panel[open] summary {
+  border-bottom: 1px solid #eef2f7;
+}
+
+.folds-panel .table-scroll {
+  padding-bottom: 4px;
+}
+
 @media (max-width: 1100px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -929,6 +1563,10 @@ h3 {
   .simulation-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 16px;
+  }
+
+  .backtest-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .panel-heading {
@@ -957,6 +1595,10 @@ h3 {
 @media (max-width: 430px) {
   .simulation-form,
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backtest-form {
     grid-template-columns: 1fr;
   }
 

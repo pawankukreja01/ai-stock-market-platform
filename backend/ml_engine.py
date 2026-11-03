@@ -594,19 +594,23 @@ def build_stock_features(
         126,
         252,
     ]:
+        # Features are known at close t. The model is executed at close t+1,
+        # so its target is the H-session return from that entry close through
+        # close t+H+1 (not the return beginning at the signal close).
         target = (
-            close.shift(-horizon)
-            / close
+            close.shift(-(horizon + 1))
+            / close.shift(-1)
         ) - 1
 
-        # Require every close from the origin through the future
-        # endpoint to be valid for this horizon.
+        # Require every OHLC-valid close from signal date t through the
+        # executable entry/exit path t+1 ... t+H+1.
+        path_length = horizon + 2
         valid_path = (
             valid_feature_price_rows.astype("int64")
-            .rolling(window=horizon + 1, min_periods=horizon + 1)
+            .rolling(window=path_length, min_periods=path_length)
             .sum()
-            .shift(-horizon)
-            .eq(horizon + 1)
+            .shift(-(path_length - 1))
+            .eq(path_length)
         )
 
         features[f"target_{horizon}d"] = target.where(valid_path)
@@ -625,8 +629,8 @@ def prepare_training_dataset(
     """
     Build a leakage-safe training dataset.
 
-    The target represents the future return over
-    the requested horizon.
+    The target represents the requested number of daily returns after
+    next-session-close execution: C[t + H + 1] / C[t + 1] - 1.
 
     Rows with missing feature or target values
     are removed.

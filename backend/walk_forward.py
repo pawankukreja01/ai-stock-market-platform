@@ -45,9 +45,9 @@ def generate_walk_forward_splits(
     horizon:
         Prediction horizon in trading days.
 
-        A gap equal to the horizon is inserted between
-        training and testing data to reduce overlapping
-        target information.
+        The target enters at t+1 and exits at t+H+1. A gap of
+        horizon + 1 observations ensures the final training label endpoint
+        precedes the first test forecast origin.
 
     step_size:
         Number of observations by which the window
@@ -95,13 +95,14 @@ def generate_walk_forward_splits(
             "step_size must be greater than zero."
         )
 
+    purge_gap = int(horizon) + 1
     folds = []
 
     train_end = minimum_train_size
     fold_number = 1
 
     while True:
-        test_start = train_end + horizon
+        test_start = train_end + purge_gap
         test_end = test_start + test_size
 
         if test_end > len(X):
@@ -116,7 +117,7 @@ def generate_walk_forward_splits(
                 "test_end": test_end,
                 "train_size": train_end,
                 "test_size": test_size,
-                "gap": horizon,
+                "gap": purge_gap,
             }
         )
 
@@ -484,7 +485,7 @@ def run_walk_forward_experiment(
                 if step_size is not None
                 else test_size
             ),
-            "gap": horizon,
+            "gap": int(horizon) + 1,
             "folds": len(folds),
         },
         "folds": [

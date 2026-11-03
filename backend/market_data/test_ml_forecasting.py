@@ -4,6 +4,7 @@ import pandas as pd
 from django.test import SimpleTestCase
 
 from ml_engine import (
+    build_stock_features,
     prepare_latest_feature_row,
     prepare_training_dataset,
 )
@@ -41,11 +42,12 @@ class ChronologicalThreeWaySplitTests(SimpleTestCase):
             horizon=5,
         )
 
-        # 200 observations minus two 5-row gaps leaves 190.
-        # Training takes 70% (133) and calibration takes 15% (28).
-        self.assertEqual(X_train.index[-1], 132)
-        self.assertEqual(X_calibration.index[0], 138)
-        self.assertEqual(X_calibration.index[-1], 165)
+        # The next-close execution convention requires H+1=6-row gaps.
+        # 200 observations minus two 6-row gaps leaves 188.
+        # Training takes 70% (131) and calibration takes 15% (28).
+        self.assertEqual(X_train.index[-1], 130)
+        self.assertEqual(X_calibration.index[0], 137)
+        self.assertEqual(X_calibration.index[-1], 164)
         self.assertEqual(X_test.index[0], 171)
 
         self.assertTrue(X_train.index.equals(y_train.index))
@@ -57,7 +59,7 @@ class ChronologicalThreeWaySplitTests(SimpleTestCase):
             len(X_train)
             + len(X_calibration)
             + len(X_test)
-            + 10,
+            + 12,
         )
 
     def test_rejects_negative_horizon(self):
@@ -140,3 +142,47 @@ class LatestFeatureRowTests(SimpleTestCase):
             "latest observation is missing usable feature values",
         ):
             prepare_latest_feature_row(prices)
+
+
+class NextCloseTargetTimingTests(SimpleTestCase):
+    def make_prices(self, observations=330):
+        dates = pd.bdate_range("2024-01-01", periods=observations)
+        close = pd.Series(np.arange(observations, dtype=float) + 100.0)
+        return pd.DataFrame({
+            "date": dates,
+            "open_price": close.to_numpy(),
+            "high_price": close.to_numpy() + 1.0,
+            "low_price": close.to_numpy() - 1.0,
+            "close_price": close.to_numpy(),
+            "volume": np.full(observations, 1000.0),
+        })
+
+    def test_horizon_target_starts_at_next_session_close(self):
+        prices = self.make_prices()
+        features = build_stock_features(prices)
+        horizon = 5
+        origin = 210
+        expected = (
+            prices["close_price"].iloc[origin + horizon + 1]
+            / prices["close_price"].iloc[origin + 1]
+        ) - 1
+        self.assertAlmostEqual(
+            features[f"target_{horizon}d"].loc[prices["date"].iloc[origin]],
+            expected,
+        )
+
+    def test_invalid_next_session_entry_candle_invalidates_target(self):
+        prices = self.make_prices()
+        prices["is_ohlc_valid"] = True
+        origin = 210
+        prices.loc[origin + 1, "is_ohlc_valid"] = False
+        features = build_stock_features(prices)
+        self.assertTrue(pd.isna(features.loc[prices["date"].iloc[origin], "target_5d"]))
+
+    def test_invalid_horizon_exit_candle_invalidates_target(self):
+        prices = self.make_prices()
+        prices["is_ohlc_valid"] = True
+        origin = 210
+        prices.loc[origin + 6, "is_ohlc_valid"] = False
+        features = build_stock_features(prices)
+        self.assertTrue(pd.isna(features.loc[prices["date"].iloc[origin], "target_5d"]))

@@ -528,43 +528,13 @@ class MLReturnPredictionView(APIView):
             latest_close
         )
 
-        # -------------------------------------------------
-        # Derived price estimates
-        #
-        # These are mathematical conversions of the
-        # return forecast and should not be interpreted
-        # as guaranteed future prices.
-        # -------------------------------------------------
-
-        estimated_price = (
-            latest_close
-            * (
-                1
-                + latest_prediction
-            )
-        )
-
-        if lower_return is not None:
-            lower_price = (
-                latest_close
-                * (
-                    1
-                    + lower_return
-                )
-            )
-        else:
-            lower_price = None
-
-        if upper_return is not None:
-            upper_price = (
-                latest_close
-                * (
-                    1
-                    + upper_return
-                )
-            )
-        else:
-            upper_price = None
+        # The target is anchored to the next session close, which is not yet
+        # known when this forecast is issued. A future target price therefore
+        # cannot be derived from today's last close without inventing an entry
+        # price. Keep the legacy response fields but return null values.
+        estimated_price = None
+        lower_price = None
+        upper_price = None
 
         # -------------------------------------------------
         # Historical dates
@@ -603,6 +573,14 @@ class MLReturnPredictionView(APIView):
                     ]
                 ),
                 "confidence": confidence,
+                "target_definition": {
+                    "formula": "close_price[t+horizon+1] / close_price[t+1] - 1",
+                    "signal_observation": "close at t",
+                    "entry": "next trading session close at t+1",
+                    "exit": "close at t+horizon+1",
+                    "holding_period_trading_days": int(horizon),
+                    "price_basis": "unadjusted close_price; dividends are excluded",
+                },
 
                 "historical_period": {
                     "start_date": str(
@@ -680,9 +658,13 @@ class MLReturnPredictionView(APIView):
 
                 "notes": [
                     (
-                        "The model predicts future "
-                        "returns rather than guaranteed "
-                        "future prices."
+                        "The forecast is the H-session return after next-session-close execution: close_price[t+H+1] / close_price[t+1] - 1."
+                    ),
+                    (
+                        "A future target price is not estimated from today's close because the next-session entry price is not yet known. Legacy estimated_price and interval price fields are therefore null."
+                    ),
+                    (
+                        "The model predicts future returns rather than guaranteed future prices."
                     ),
                     (
                         "The prediction interval uses a finite-sample "

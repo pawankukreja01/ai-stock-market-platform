@@ -19,6 +19,11 @@ SENSITIVITY_METRICS = [
     "profit_factor",
     "trades",
     "total_trading_cost",
+    "gross_cumulative_return",
+    "gross_to_net_return_drag",
+    "total_transaction_cost",
+    "total_slippage_cost",
+    "total_turnover",
 ]
 
 

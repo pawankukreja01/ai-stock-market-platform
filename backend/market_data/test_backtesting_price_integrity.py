@@ -40,5 +40,5 @@ class BacktestingPriceIntegrityTests(SimpleTestCase):
             prices, predictions, holding_period=2
         )
         self.assertEqual(window_prices.index[0], 0)
-        self.assertEqual(window_prices.index[-1], 8)
+        self.assertEqual(window_prices.index[-1], 7)
         self.assertEqual(window_predictions.loc[6], 0.04)

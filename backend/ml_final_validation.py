@@ -353,7 +353,8 @@ def build_final_validation_report(X, y, folds, model_predictions, model_key, hor
         "protocol": {
             "method": "Expanding-window walk-forward evaluation",
             "target_horizon_trading_days": int(horizon),
-            "gap_trading_days": int(horizon),
+            "gap_trading_days": int(horizon) + 1,
+            "execution_timing": "Signal at close t; entry at close t+1; H return sessions held through close t+H+1.",
             "folds_evaluated": int(len(fold_metrics)),
             "out_of_sample_observations": int(len(aligned)),
             "shuffling": False,

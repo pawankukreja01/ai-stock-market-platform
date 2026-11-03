@@ -1,4 +1,4 @@
-from datetime import date
+import math
 
 import pandas as pd
 
@@ -21,6 +21,8 @@ from backtesting import (
     generate_walk_forward_predictions,
     compare_strategies,
     prepare_horizon_backtest_window,
+    choose_walk_forward_test_size,
+    choose_walk_forward_step_size,
 )
 from backtest_analysis import build_backtest_analysis
 from backtest_sensitivity import run_cost_slippage_sensitivity
@@ -47,6 +49,36 @@ SUPPORTED_HORIZONS = {
     126: "6M",
     252: "1Y",
 }
+
+
+def build_backtest_execution_prices(price_frame):
+    """Build a close-price series while preserving invalid OHLC rows as gaps.
+
+    Invalid observations remain in the index as NaN so the downstream
+    backtest integrity checks reject a window that would otherwise bridge
+    across a candle explicitly marked invalid by ingestion.
+    """
+    if price_frame.empty:
+        return pd.Series(dtype=float, name="close")
+
+    required = {"date", "close_price", "is_ohlc_valid"}
+    missing = required.difference(price_frame.columns)
+    if missing:
+        raise ValueError(
+            "Missing required execution-price fields: "
+            + ", ".join(sorted(missing))
+        )
+
+    dates = pd.to_datetime(price_frame["date"])
+    close = pd.to_numeric(price_frame["close_price"], errors="coerce")
+    valid_ohlc = price_frame["is_ohlc_valid"].fillna(False).astype(bool)
+    close = close.where(valid_ohlc)
+
+    return pd.Series(
+        close.to_numpy(dtype=float),
+        index=dates,
+        name="close",
+    )
 
 
 class BacktestView(APIView):
@@ -163,6 +195,20 @@ class BacktestView(APIView):
                 status=400,
             )
 
+        if not all(
+            math.isfinite(value)
+            for value in (transaction_cost_bps, slippage_bps, threshold)
+        ):
+            return Response(
+                {
+                    "error": (
+                        "transaction_cost_bps, slippage_bps, and threshold "
+                        "must be finite numbers."
+                    )
+                },
+                status=400,
+            )
+
         if transaction_cost_bps < 0 or slippage_bps < 0:
             return Response(
                 {
@@ -252,27 +298,32 @@ class BacktestView(APIView):
             max(300, len(X) // 2),
         )
 
-        remaining = len(X) - minimum_train_size - horizon
+        purge_gap = horizon + 1
+        remaining = len(X) - minimum_train_size - purge_gap
 
-        if remaining < 100:
+        minimum_oos_observations = max(100, horizon + 2)
+        if remaining < minimum_oos_observations:
             return Response(
                 {
                     "error": (
-                        "Not enough usable observations for "
-                        "walk-forward backtesting."
+                        "Not enough usable out-of-sample observations for at least "
+                        "two fully realized, non-overlapping strategy holding blocks "
+                        f"at the selected {horizon}-day horizon. Try a shorter horizon "
+                        "or load more historical data."
                     ),
                     "usable_observations": len(X),
+                    "available_out_of_sample_observations": remaining,
+                    "minimum_required_out_of_sample_observations": minimum_oos_observations,
+                    "purge_gap": purge_gap,
                 },
                 status=400,
             )
 
-        test_size = min(
-            self.DEFAULT_TEST_SIZE,
-            max(50, remaining // 2),
+        test_size = choose_walk_forward_test_size(
+            available_oos_observations=remaining,
+            horizon=horizon,
+            default_test_size=self.DEFAULT_TEST_SIZE,
         )
-
-        if minimum_train_size + horizon + test_size > len(X):
-            test_size = len(X) - minimum_train_size - horizon
 
         if test_size <= 0:
             return Response(
@@ -284,9 +335,12 @@ class BacktestView(APIView):
                 status=400,
             )
 
-        step_size = min(
-            self.DEFAULT_STEP_SIZE,
-            test_size,
+        # A long-horizon fold may need to be larger than the default
+        # 200-row step. Never let fold test windows overlap: duplicate test
+        # dates would cause the prediction series to keep only the later fold.
+        step_size = choose_walk_forward_step_size(
+            test_size=test_size,
+            default_step_size=self.DEFAULT_STEP_SIZE,
         )
 
         try:
@@ -348,14 +402,10 @@ class BacktestView(APIView):
 
         # Preserve every stored observation date. The horizon-window helper
         # will reject an invalid execution price instead of bridging the gap.
-        close_prices = pd.Series(
-            pd.to_numeric(
-                df["close_price"],
-                errors="coerce",
-            ).values,
-            index=pd.to_datetime(df["date"]),
-            name="close",
-        )
+        try:
+            close_prices = build_backtest_execution_prices(df)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
 
         common_index = close_prices.index.intersection(
             prediction_series.index
@@ -383,8 +433,8 @@ class BacktestView(APIView):
 
         try:
             strategy_results = compare_strategies(
-                aligned_prices,
-                aligned_predictions,
+                close_prices,
+                prediction_series,
                 transaction_cost_bps=transaction_cost_bps,
                 slippage_bps=slippage_bps,
                 sma_period=200,
@@ -415,17 +465,17 @@ class BacktestView(APIView):
                 .astype(float)
             )
 
+            # Keep the existing API curve contract: the frontend supplies the
+            # initial 1.0 point at the beginning of the comparison period.
             strategies[key] = {
-                "metrics": self._serialize_metrics(
-                    metrics
-                ),
+                "metrics": self._serialize_metrics(metrics),
                 "equity_curve": {
-                    "dates": [
-                        index.strftime("%Y-%m-%d")
-                        for index in equity.index
-                    ],
+                    "dates": [index.strftime("%Y-%m-%d") for index in equity.index],
                     "values": equity.tolist(),
                 },
+                # Trade rows are generated by the same execution ledger used
+                # for strategy metrics; no second trade-accounting path exists.
+                "trades": [self._serialize_trade(trade) for trade in result["trades"]],
             }
 
         first_index = aligned_prices.index[0]
@@ -467,8 +517,8 @@ class BacktestView(APIView):
 
         try:
             sensitivity = run_cost_slippage_sensitivity(
-                aligned_prices,
-                aligned_predictions,
+                close_prices,
+                prediction_series,
                 selected_transaction_cost_bps=transaction_cost_bps,
                 selected_slippage_bps=slippage_bps,
                 prediction_threshold=threshold,
@@ -492,6 +542,13 @@ class BacktestView(APIView):
                 "model_name": MODEL_LABELS[model_key],
                 "horizon": horizon,
                 "horizon_label": SUPPORTED_HORIZONS[horizon],
+                "price_basis": {
+                    "field": "close_price",
+                    "description": (
+                        "Stored daily closing prices. This is not an adjusted-close "
+                        "total-return series; dividend adjustments are not included."
+                    ),
+                },
                 "backtest_period": {
                     "start_date": first_index.strftime("%Y-%m-%d"),
                     "end_date": last_index.strftime("%Y-%m-%d"),
@@ -505,7 +562,7 @@ class BacktestView(APIView):
                     "minimum_train_size": minimum_train_size,
                     "test_size": test_size,
                     "step_size": step_size,
-                    "gap": horizon,
+                    "gap": purge_gap,
                     "folds": len(folds),
                 },
                 "strategies": strategies,
@@ -519,17 +576,35 @@ class BacktestView(APIView):
                         "walk-forward training."
                     ),
                     (
-                        "A gap equal to the prediction horizon is placed "
-                        "between each training window and its test window."
+                        "The target is the H-session close-to-close return after next-session-close execution: C[t+H+1] / C[t+1] - 1."
                     ),
                     (
-                        "The ML strategy uses non-overlapping blocks: each selected "
-                        "forecast determines long/cash exposure for the next horizon "
-                        "trading-day returns."
+                        "A purge gap of H+1 observations separates training labels from test forecast origins."
                     ),
                     (
-                        "Transaction costs and slippage are explicit backtest "
-                        "assumptions and are not guarantees of actual execution costs."
+                        "The ML strategy uses non-overlapping forecasts. A signal at close t enters at close t+1, earns H return sessions, and exits at close t+H+1."
+                    ),
+                    (
+                        "Transaction costs and slippage are charged at each execution: entry and exit for a round trip; continuous comparators also liquidate at the final close."
+                    ),
+                    (
+                        "Sharpe and Sortino ratios use a zero risk-free-rate assumption."
+                    ),
+                    (
+                        "The backtest uses the stored close_price field rather than "
+                        "adjusted_close; dividend-adjusted total returns are not represented."
+                    ),
+                    (
+                        "Trade win rate and average trade returns use completed, fully closed round trips; an open final position is excluded. Buy & Hold is normally one continuous completed position, not a set of daily trades."
+                    ),
+                    (
+                        "Gross return excludes transaction costs and slippage; net return includes both. The gross-to-net drag is the difference between compounded gross and compounded net returns."
+                    ),
+                    (
+                        "Transaction-cost and slippage totals are return-space deductions summed against the normalised starting capital, not absolute cash fees in USD. Turnover is the sum of absolute position-weight changes."
+                    ),
+                    (
+                        "Transaction costs and slippage are explicit backtest assumptions and are not guarantees of actual execution costs."
                     ),
                     (
                         "This is a historical simulation, not a prediction "
@@ -546,10 +621,27 @@ class BacktestView(APIView):
             if value is None:
                 result[key] = None
             elif isinstance(value, (int, float)):
-                if value == float("inf"):
-                    result[key] = None
-                else:
-                    result[key] = float(value)
+                result[key] = (
+                    float(value) if math.isfinite(float(value)) else None
+                )
             else:
                 result[key] = value
         return result
+
+    @staticmethod
+    def _serialize_trade(trade):
+        """Return a JSON-safe completed-trade ledger row."""
+        serialized = {}
+        for key, value in trade.items():
+            if value is None:
+                serialized[key] = None
+            elif isinstance(value, (int, float)):
+                if not math.isfinite(float(value)):
+                    serialized[key] = None
+                elif isinstance(value, int) and not isinstance(value, bool):
+                    serialized[key] = int(value)
+                else:
+                    serialized[key] = float(value)
+            else:
+                serialized[key] = str(value)
+        return serialized

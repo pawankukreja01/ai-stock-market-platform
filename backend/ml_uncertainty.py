@@ -11,8 +11,9 @@ def chronological_three_way_split(
     """
     Chronologically split data into training, calibration and test sets.
 
-    A gap equal to the forecast horizon is omitted at each boundary
-    so future-return targets do not overlap between adjacent sets.
+    A gap of horizon + 1 observations is omitted at each boundary.
+    The model observes close t, enters at close t+1 and exits at close
+    t+horizon+1, so this keeps training label paths ahead of later sets.
     """
     if len(X) != len(y):
         raise ValueError(
@@ -50,8 +51,9 @@ def chronological_three_way_split(
             "horizon must be a non-negative integer."
         )
 
+    purge_gap = int(horizon) + 1
     n = len(X)
-    available_observations = n - (2 * horizon)
+    available_observations = n - (2 * purge_gap)
 
     if available_observations < 100:
         raise ValueError(
@@ -64,9 +66,9 @@ def chronological_three_way_split(
         available_observations * calibration_size
     )
 
-    calibration_start = train_end + horizon
+    calibration_start = train_end + purge_gap
     calibration_end = calibration_start + calibration_count
-    test_start = calibration_end + horizon
+    test_start = calibration_end + purge_gap
 
     if train_end <= 0:
         raise ValueError("Training set is empty.")
