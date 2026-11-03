@@ -108,3 +108,26 @@ class ResearchSyncSafetyTests(TestCase):
                 "sync_personal_research", symbols=["AAPL"],
                 include_sentiment=True, stdout=StringIO(),
             )
+
+    @patch(
+        "market_data.management.commands.sync_personal_research.verify_safe_database"
+    )
+    @patch(
+        "market_data.management.commands.sync_personal_research.call_command"
+    )
+    def test_rate_limit_short_circuits_remaining_provider_steps(
+        self, ingest, safety_check,
+    ):
+        Stock.objects.create(
+            symbol="MSFT", company_name="Microsoft", exchange="NASDAQ",
+            is_active=True,
+        )
+        ingest.side_effect = CommandError("HTTP 429 Too Many Requests")
+        with self.assertRaisesRegex(CommandError, "completed with errors"):
+            call_command(
+                "sync_personal_research",
+                symbols=["AAPL", "MSFT"], execute=True,
+                include_news=True, delay_seconds=1,
+                stdout=StringIO(), stderr=StringIO(),
+            )
+        ingest.assert_called_once()
