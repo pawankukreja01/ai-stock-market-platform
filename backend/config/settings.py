@@ -315,5 +315,9 @@ REST_FRAMEWORK = {
 
         # Maximum five password-reset requests per hour.
         "auth_password_reset": "5/hour",
+
+        # Expensive per-request model training and walk-forward simulations.
+        "ml_prediction": "20/hour",
+        "ml_backtest": "6/hour",
     },
 }
