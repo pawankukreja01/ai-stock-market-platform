@@ -1120,6 +1120,14 @@
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          class="ml-generate-button"
+          :disabled="mlLoading"
+          @click="loadMLPrediction"
+        >
+          {{ mlLoading ? "Generating…" : "Generate prediction" }}
+        </button>
       </div>
 
       <div
@@ -1140,7 +1148,9 @@
         v-else-if="!mlPrediction"
         class="ml-prediction-empty"
       >
-        No ML prediction is currently available.
+        Select a model and horizon, then click <strong>Generate prediction</strong>.
+        Forecasts are experimental and trained only when requested to avoid
+        repeated backend training and request limits.
       </div>
 
       <template v-else>
@@ -5577,6 +5587,46 @@ const renderBacktestChart = (result) => {
   );
 };
 
+const formatResearchRequestError = (err, fallback, { minObservations = 0 } = {}) => {
+  // DRF throttling and authentication often return "detail", not "error".
+  const data = err?.response?.data || {};
+  const status = err?.response?.status;
+  const message = typeof data.error === "string" ? data.error
+    : typeof data.detail === "string" ? data.detail
+    : "";
+
+  if (status === 429) {
+    const wait = Number(data.wait);
+    return Number.isFinite(wait) && wait > 0
+      ? `Request limit reached. Retry after about ${Math.ceil(wait)} seconds. Forecasts are generated only when requested.`
+      : "Request limit reached. Wait before retrying and avoid rapidly switching models.";
+  }
+  if (status === 401 || status === 403) {
+    return "Your session is not authorized for this research request. Please sign in again.";
+  }
+  if (status === 400) {
+    const count = Number(data.observations);
+    const countText = Number.isFinite(count) && count >= 0 ? ` (${count} currently stored)` : "";
+    if (minObservations && /historical observations/i.test(message)) {
+      return `This stock needs at least ${minObservations} historical observations for this analysis${countText}. Try another stock or update its historical data in the restored test database.`;
+    }
+    return message || "The selected stock does not have enough usable data for this analysis.";
+  }
+  if (status === 404) {
+    return message || "This stock was not found in the backend.";
+  }
+  if (status === 503) {
+    return message || "The required market-data service is currently unavailable.";
+  }
+  if (status >= 500) {
+    return `${fallback} The server returned an error. Check the Django terminal for diagnostic details.`;
+  }
+  if (!err?.response) {
+    return "Unable to connect to the Django API. Confirm that the backend is running and try again.";
+  }
+  return message || (err?.message === "Invalid ML prediction response." ? err.message : fallback);
+};
+
 const loadBacktest = async () => {
   try {
     backtestLoading.value = true;
@@ -5613,9 +5663,11 @@ const loadBacktest = async () => {
     );
 
     backtestResult.value = null;
-    backtestError.value =
-      err?.response?.data?.error ||
-      "Unable to run strategy backtest.";
+    backtestError.value = formatResearchRequestError(
+      err,
+      "Unable to run strategy backtest.",
+      { minObservations: 1200 }
+    );
   } finally {
     backtestLoading.value = false;
   }
@@ -5652,9 +5704,11 @@ const loadMLPrediction = async () => {
     );
 
     mlPrediction.value = null;
-    mlError.value =
-      err?.response?.data?.error ||
-      "Unable to generate ML return prediction.";
+    mlError.value = formatResearchRequestError(
+      err,
+      "Unable to generate ML return prediction.",
+      { minObservations: 300 }
+    );
   } finally {
     mlLoading.value = false;
   }
@@ -5668,7 +5722,8 @@ const changeMLModel = (model) => {
   mlModel.value = model;
   backtestResult.value = null;
   backtestError.value = "";
-  loadMLPrediction();
+  mlPrediction.value = null;
+  mlError.value = "";
 };
 
 const changeMLHorizon = (horizon) => {
@@ -5679,7 +5734,8 @@ const changeMLHorizon = (horizon) => {
   mlHorizon.value = horizon;
   backtestResult.value = null;
   backtestError.value = "";
-  loadMLPrediction();
+  mlPrediction.value = null;
+  mlError.value = "";
 };
 
 const loadPrices = async (includeML = false) => {
@@ -5800,9 +5856,8 @@ const loadPrices = async (includeML = false) => {
       );
     }
 
-    if (includeML) {
-      await loadMLPrediction();
-    }
+    // Don't automatically train ML models whenever a stock changes.
+    // The user can explicitly generate a forecast from the ML panel.
   } catch (err) {
     console.error(
       "Failed to load historical prices:",
@@ -8750,4 +8805,23 @@ onBeforeUnmount(() => {
   }
 }
 
+.ml-generate-button {
+  min-height: 40px;
+  border-radius: 9px;
+  border: 1px solid var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 9px 15px;
+  cursor: pointer;
+}
+.ml-generate-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+.ml-generate-button:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 25%);
+  outline-offset: 2px;
+}
 </style>
