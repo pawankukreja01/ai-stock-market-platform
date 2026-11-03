@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import numpy as np
 from django.test import SimpleTestCase
 
-from market_data.prediction_quality import assess_prediction_evidence
+from market_data.prediction_quality import assess_prediction_evidence, assess_direction_bias
 
 
 class PredictionEvidenceTests(SimpleTestCase):
@@ -22,8 +22,9 @@ class PredictionEvidenceTests(SimpleTestCase):
         )
 
     def test_strong_holdout_forecast_can_be_promising_but_never_live_ready(self):
-        actual = np.full(40, 0.03)
-        prediction = np.full(40, 0.029)
+        # Both up and down periods must appear in an evidence-positive fixture.
+        actual = np.array([0.03, -0.03] * 20)
+        prediction = np.array([0.029, -0.029] * 20)
         report = self.assess(actual, prediction)
         self.assertEqual(report["status"], "promising_holdout_only")
         self.assertFalse(report["ready_for_live_trading"])
@@ -69,3 +70,27 @@ class PredictionEvidenceTests(SimpleTestCase):
             self.assess([0.1, 0.2], [0.1])
         with self.assertRaisesRegex(ValueError, "finite"):
             self.assess([0.1] * 20, [float("nan")] * 20)
+
+    def test_one_sided_bullish_predictions_are_flagged(self):
+        report = assess_direction_bias({
+            "actual_positive_rate": 0.558,
+            "predicted_positive_rate": 0.99,
+            "balanced_directional_accuracy": 0.499,
+        })
+        self.assertAlmostEqual(
+            report["directional_rate_gap_percentage_points"], 43.2
+        )
+        self.assertIn("heavily skewed positive", report["warning"])
+
+    def test_balanced_directional_predictions_have_no_bias_warning(self):
+        report = assess_direction_bias({
+            "actual_positive_rate": 0.56,
+            "predicted_positive_rate": 0.55,
+            "balanced_directional_accuracy": 0.54,
+        })
+        self.assertIsNone(report["warning"])
+
+    def test_single_class_holdout_is_not_marked_promising(self):
+        report = self.assess(np.full(40, 0.03), np.full(40, 0.029))
+        self.assertEqual(report["status"], "limited_evidence")
+        self.assertTrue(any("one return direction" in w for w in report["warnings"]))
