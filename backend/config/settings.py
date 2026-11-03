@@ -318,6 +318,6 @@ REST_FRAMEWORK = {
 
         # Expensive per-request model training and walk-forward simulations.
         "ml_prediction": "20/hour",
-        "ml_backtest": "6/hour",
+        "ml_backtest": "30/hour",
     },
 }
