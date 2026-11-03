@@ -57,6 +57,11 @@ const routes = [
         props: true,
       },
       {
+        path: "research-health",
+        name: "ResearchHealth",
+        component: () => import("./views/ResearchHealth.vue"),
+      },
+      {
         path: "screener",
         name: "StockScreener",
         component: () => import("./views/StockScreener.vue"),
