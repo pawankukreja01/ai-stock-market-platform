@@ -5,6 +5,7 @@ supply prediction values. Recording is opt-in, requires the restored test DB,
 and rejects stale or future-dated signal observations.
 """
 import os
+from types import SimpleNamespace
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -55,12 +56,13 @@ class ProspectiveCaptureView(APIView):
 
         # Reuse actual server-side model generation, never caller-supplied
         # returns. This may be compute-intensive; DRF throttle applies.
-        request._request.GET = request._request.GET.copy()
-        request._request.GET.update({
+        # Reuse the GET calculation, without mutating the authenticated
+        # POST request or accepting any client-supplied forecast values.
+        internal_request = SimpleNamespace(query_params={
             "symbol": symbol, "model": model, "horizon": str(horizon),
             "confidence": "0.90",
         })
-        predicted = MLReturnPredictionView().get(request)
+        predicted = MLReturnPredictionView().get(internal_request)
         if predicted.status_code != 200:
             return Response({
                 "detail": "ML prediction was not available. No record saved.",
