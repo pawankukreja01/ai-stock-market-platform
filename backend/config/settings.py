@@ -231,6 +231,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # Compressed and hashed assets for deterministic deployment. Do not serve user
 # uploads with WhiteNoise; production media requires a separate storage tier.
 STORAGES = {
+    # Preserve Django's normal media-file behavior in local preview.
+    # Production user uploads require separately configured private storage.
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
         "BACKEND": (
             "whitenoise.storage.CompressedManifestStaticFilesStorage"
