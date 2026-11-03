@@ -66,6 +66,91 @@ def model_beats_all_baselines(report):
     )
 
 
+def build_model_scorecard(report):
+    """Summarize already-aligned out-of-sample returns in percentage points.
+
+    This is diagnostic only. Choosing the best baseline here is descriptive,
+    NOT an out-of-sample model-selection rule or a live trading recommendation.
+    """
+    metrics = report["metrics"]
+    selected = metrics["selected_model"]
+    baseline_names = ("zero_return", "historical_mean", "momentum")
+    available = [
+        (name, metrics[name]["mae"])
+        for name in baseline_names
+        if metrics[name].get("mae") is not None
+    ]
+    model_mae = selected.get("mae")
+    best_name, best_mae = (
+        min(available, key=lambda pair: pair[1]) if available else (None, None)
+    )
+    baselines_beaten = [
+        name for name, mae in available
+        if model_mae is not None and model_mae < mae
+    ]
+    return {
+        "mae_percent": round(model_mae * 100, 4) if model_mae is not None else None,
+        "best_baseline": best_name,
+        "best_baseline_mae_percent": (
+            round(best_mae * 100, 4) if best_mae is not None else None
+        ),
+        "mae_improvement_vs_best_baseline_percentage_points": (
+            round((best_mae - model_mae) * 100, 4)
+            if model_mae is not None and best_mae is not None
+            else None
+        ),
+        "baselines_beaten_on_mae": baselines_beaten,
+        "balanced_directional_accuracy_percent": (
+            round(selected["balanced_directional_accuracy"] * 100, 2)
+            if selected.get("balanced_directional_accuracy") is not None
+            else None
+        ),
+        "negative_specificity_percent": (
+            round(selected["negative_specificity"] * 100, 2)
+            if selected.get("negative_specificity") is not None
+            else None
+        ),
+        "predicted_positive_rate_percent": (
+            round(selected["predicted_positive_rate"] * 100, 2)
+            if selected.get("predicted_positive_rate") is not None
+            else None
+        ),
+        "actual_positive_rate_percent": (
+            round(selected["actual_positive_rate"] * 100, 2)
+            if selected.get("actual_positive_rate") is not None
+            else None
+        ),
+        "out_of_sample_observations": selected.get("observations"),
+    }
+
+
+def render_model_scorecard(scorecard):
+    """Short human-readable line without implying validated predictive skill."""
+    if scorecard["mae_percent"] is None or scorecard["best_baseline"] is None:
+        return "  Scorecard: insufficient comparable out-of-sample metrics."
+
+    improvement = scorecard["mae_improvement_vs_best_baseline_percentage_points"]
+    balanced = scorecard["balanced_directional_accuracy_percent"]
+    specificity = scorecard["negative_specificity_percent"]
+    return (
+        f"  MAE: model {scorecard['mae_percent']:.3f}% vs best baseline "
+        f"({scorecard['best_baseline']}) "
+        f"{scorecard['best_baseline_mae_percent']:.3f}%; "
+        f"difference {improvement:+.3f} percentage points "
+        "(positive means model is better). "
+        f"Balanced direction: {balanced:.1f}% "
+        if balanced is not None else
+        f"  MAE: model {scorecard['mae_percent']:.3f}% vs best baseline "
+        f"({scorecard['best_baseline']}) "
+        f"{scorecard['best_baseline_mae_percent']:.3f}%; "
+        f"difference {improvement:+.3f} percentage points. "
+    ) + (
+        f"| Negative specificity: {specificity:.1f}%"
+        if specificity is not None else
+        "| Negative specificity: unavailable"
+    )
+
+
 class Command(BaseCommand):
     help = (
         "Evaluate one ML model on stored stocks using expanding-window "
@@ -227,6 +312,7 @@ class Command(BaseCommand):
                 direction_bias = assess_direction_bias(
                     details["metrics"]["selected_model"]
                 )
+                scorecard = build_model_scorecard(details)
                 evaluated += 1
                 wins += int(beat_all)
                 item.update({
@@ -241,6 +327,7 @@ class Command(BaseCommand):
                     ),
                     "beats_all_baselines_on_mae": beat_all,
                     "directional_bias": direction_bias,
+                    "scorecard": scorecard,
                     "selected_model_metrics": details["metrics"]["selected_model"],
                     "baseline_metrics": {
                         k: details["metrics"][k]
@@ -250,6 +337,7 @@ class Command(BaseCommand):
                 })
                 verdict = "beat all three baselines" if beat_all else "did not beat all baselines"
                 self.stdout.write(f"{stock.symbol}: {len(folds)} folds; {verdict}")
+                self.stdout.write(render_model_scorecard(scorecard))
                 if direction_bias["warning"]:
                     self.stdout.write(f"  CAUTION: {direction_bias['warning']}")
 
