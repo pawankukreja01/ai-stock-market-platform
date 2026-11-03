@@ -137,6 +137,71 @@ def _save_cache(csv_path, metadata_path, series, ticker, start_date, end_date, o
     metadata_tmp.replace(metadata_path)
 
 
+
+def load_cached_benchmark_prices(price_df, exchange="", *, cache_dir=None):
+    """Read a complete *existing* benchmark cache without network or writes.
+
+    Offline walk-forward validation must not silently switch feature sets
+    because Yahoo Finance is unavailable. An absent or incomplete cache is an
+    explicit research-data failure. The live API may use the more permissive
+    fetch_benchmark_prices() path, so reports identify their feature set.
+    """
+    if price_df is None or getattr(price_df, "empty", True):
+        raise BenchmarkDataUnavailable("Cannot validate an empty price history.")
+    if "date" not in price_df.columns:
+        raise BenchmarkDataUnavailable("Price history has no date column.")
+
+    market = market_for_exchange(exchange)
+    ticker = BENCHMARK_TICKERS.get(str(market or "").strip().upper())
+    if not ticker:
+        raise BenchmarkDataUnavailable(
+            f"No cached benchmark mapping for exchange {exchange!r}."
+        )
+
+    try:
+        start_date = pd.Timestamp(price_df["date"].min()).normalize()
+        end_date = pd.Timestamp(price_df["date"].max()).normalize()
+        if pd.isna(start_date) or pd.isna(end_date) or end_date < start_date:
+            raise ValueError("Invalid date bounds")
+    except (TypeError, ValueError) as exc:
+        raise BenchmarkDataUnavailable("Invalid price history date bounds.") from exc
+
+    csv_path, metadata_path = _cache_paths(ticker, cache_dir)
+    cached = _read_cache(csv_path)
+    metadata = _read_metadata(metadata_path)
+
+    if cached.empty or not _metadata_covers(metadata, start_date, end_date):
+        raise BenchmarkDataUnavailable(
+            f"Complete local cache missing for {ticker} "
+            f"({start_date.date()} to {end_date.date()}). "
+            "Refresh the benchmark using the normal prediction/research API "
+            "before running offline market-aligned validation."
+        )
+
+    # Guard against a stale/truncated CSV whose metadata overstates coverage.
+    tolerance = pd.Timedelta(days=7)
+    if cached.index.min() > start_date + tolerance or cached.index.max() < end_date - tolerance:
+        raise BenchmarkDataUnavailable(
+            f"Cached {ticker} observations do not cover the requested window."
+        )
+
+    # No network, file write or fallback to a different market.
+    result = cached.loc[
+        (cached.index >= start_date) & (cached.index <= end_date)
+    ].copy()
+    if result.empty:
+        raise BenchmarkDataUnavailable(f"No usable cached {ticker} observations.")
+    result.attrs.update({
+        "status": "cache_hit",
+        "ticker": ticker,
+        "source": "local_cache",
+        "cache_hit": True,
+        "covered_start": metadata.get("covered_start"),
+        "covered_end": metadata.get("covered_end"),
+    })
+    return result
+
+
 def fetch_benchmark_prices(
     price_df,
     exchange="",

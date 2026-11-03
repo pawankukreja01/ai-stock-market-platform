@@ -56,6 +56,11 @@
       </button>
     </div>
 
+    <div v-else-if="!result" class="state-message">
+      Choose a forecast horizon and model, then select <strong>Generate explanation</strong>.
+      This trains a model on demand and counts toward the research API request limit.
+    </div>
+
     <template v-else-if="result">
       <div class="summary-grid">
         <div class="summary-card">
@@ -354,8 +359,33 @@ async function loadExplanation() {
     console.error("Failed to generate SHAP explanation:", err);
 
     error.value =
-      err.response?.data?.error ||
-      "Unable to generate the forecast explanation. Check the Django server and try again.";
+      (() => {
+        const data = err?.response?.data || {};
+        const status = err?.response?.status;
+        if (status === 429) {
+          const wait = Number(data.wait);
+          return Number.isFinite(wait) && wait > 0
+            ? `Research request limit reached. Retry in about ${Math.ceil(wait)} seconds.`
+            : "Research request limit reached. Wait before requesting another explanation.";
+        }
+        if (status === 401 || status === 403) return "Your session is not authorized. Please sign in again.";
+        if (status === 400) {
+          const explanation = typeof data.error === "string" ? data.error
+            : typeof data.detail === "string" ? data.detail
+            : "The selected stock may not have enough usable historical data.";
+          const count = Number(data.observations);
+          return Number.isFinite(count) && count >= 0
+            ? `${explanation} (Available observations: ${count}).`
+            : explanation;
+        }
+        if (status === 503) return typeof data.error === "string"
+          ? data.error : "Benchmark or market data is currently unavailable.";
+        if (status >= 500) return "The Django backend could not complete this forecast. Check its terminal logs for the cause.";
+        if (!err?.response) return "Unable to reach the Django API. Check that the backend server is running.";
+        return typeof data.error === "string" ? data.error
+          : typeof data.detail === "string" ? data.detail
+          : "Unable to generate the forecast explanation.";
+      })();
   } finally {
     if (currentRequest === requestId) {
       loading.value = false;
@@ -371,12 +401,16 @@ function resizeCharts() {
 
 watch(
   () => props.symbol,
-  () => loadExplanation()
+  () => {
+    requestId += 1;
+    loading.value = false;
+    error.value = "";
+    result.value = null;
+  }
 );
 
 onMounted(() => {
   window.addEventListener("resize", resizeCharts);
-  loadExplanation();
 });
 
 onBeforeUnmount(() => {

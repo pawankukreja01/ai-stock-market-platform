@@ -1,14 +1,15 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
 from rest_framework.test import APIClient
 
-from market_data.models import HistoricalPrice, NewsArticle
+from market_data.models import HistoricalPrice, NewsArticle, LatestQuote
 from stocks.models import Stock
 
 from .models import AlertEvent, AlertRule
@@ -20,6 +21,10 @@ class AlertAPITests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="alert_owner", password="test-only-password"
+        )
+        self.client.force_authenticate(user=self.user)
 
         self.stock = Stock.objects.create(
             symbol="AAPL",
@@ -48,6 +53,7 @@ class AlertAPITests(TestCase):
         name="Test AAPL alert",
     ):
         return AlertRule.objects.create(
+            owner=self.user,
             stock=self.stock,
             name=name,
             alert_type=alert_type,
@@ -224,6 +230,76 @@ class AlertAPITests(TestCase):
             2,
         )
 
+    def test_price_alert_uses_fresh_stored_quote_when_opted_in(self):
+        rule = self.create_rule(threshold="300.00")
+        LatestQuote.objects.create(
+            stock=self.stock, price=Decimal("250.00"),
+            currency="USD", quote_type="intraday_1m",
+            source_timestamp=timezone.now(),
+        )
+        self.assertEqual(
+            get_observed_value(rule, use_latest_quote=True),
+            Decimal("250.00"),
+        )
+        # Existing historical-mode behavior is retained.
+        self.assertEqual(get_observed_value(rule), Decimal("343.46"))
+
+        out = StringIO()
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=out,
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
+        self.assertFalse(AlertRule.objects.get(pk=rule.pk).condition_met)
+
+        quote = LatestQuote.objects.get(stock=self.stock)
+        quote.price = Decimal("350.00")
+        quote.save(update_fields=["price"])
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=StringIO(),
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 1)
+        self.assertIn("latest available stored quote",
+                      AlertEvent.objects.get(rule=rule).message)
+
+    def test_price_alert_skips_stale_quote_without_historical_fallback(self):
+        rule = self.create_rule(threshold="300.00")
+        LatestQuote.objects.create(
+            stock=self.stock, price=Decimal("350.00"),
+            currency="USD", quote_type="daily_close",
+            source_timestamp=timezone.now() - timedelta(days=3),
+        )
+        self.assertIsNone(
+            get_observed_value(
+                rule, use_latest_quote=True, max_quote_age_minutes=30,
+            )
+        )
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True,
+            max_quote_age_minutes=30, stdout=StringIO(),
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
+        self.assertIsNone(AlertRule.objects.get(pk=rule.pk).last_evaluated_at)
+
+    def test_price_only_mode_does_not_modify_sentiment_alerts(self):
+        rule = self.create_rule(alert_type=AlertRule.SENTIMENT_ABOVE,
+                                threshold="0.25")
+        NewsArticle.objects.create(
+            stock=self.stock, title="Strong company outlook",
+            url="https://example.com/news/strong",
+            sentiment_score=0.7,
+            sentiment_analyzed_at=timezone.now(),
+        )
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=StringIO(),
+        )
+        rule.refresh_from_db()
+        self.assertIsNone(rule.last_evaluated_at)
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
+
     def test_sentiment_alert_uses_analyzed_news(self):
         NewsArticle.objects.create(
             stock=self.stock,
@@ -311,3 +387,52 @@ class AlertAPITests(TestCase):
             AlertEvent.objects.filter(rule=rule).count(),
             0,
         )
+    def test_anonymous_alert_api_rejected(self):
+        anonymous = APIClient()
+        self.assertIn(anonymous.get("/api/alerts/").status_code, (401, 403))
+        self.assertIn(anonymous.get("/api/alerts/events/").status_code, (401, 403))
+
+    def test_cross_user_alert_rules_and_events_denied(self):
+        other = get_user_model().objects.create_user(
+            username="other_alert_user", password="test-only-password"
+        )
+        rule = AlertRule.objects.create(
+            owner=other, stock=self.stock, alert_type="price_above",
+            threshold=Decimal("300.00")
+        )
+        event = AlertEvent.objects.create(
+            rule=rule, observed_value=Decimal("343.46"), message="Private event"
+        )
+        rules = self.client.get("/api/alerts/")
+        self.assertEqual(rules.status_code, 200)
+        self.assertNotIn(rule.pk, [row["id"] for row in rules.data])
+        events = self.client.get("/api/alerts/events/")
+        self.assertEqual(events.status_code, 200)
+        self.assertNotIn(event.pk, [row["id"] for row in events.data["results"]])
+        self.assertEqual(self.client.get(f"/api/alerts/{rule.pk}/").status_code, 404)
+        self.assertEqual(self.client.patch(
+            f"/api/alerts/{rule.pk}/", {"name": "Stolen"}, format="json"
+        ).status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/alerts/{rule.pk}/").status_code, 404)
+        self.assertEqual(self.client.post(f"/api/alerts/events/{event.pk}/read/").status_code, 404)
+        self.assertFalse(AlertEvent.objects.get(pk=event.pk).is_read)
+
+    def test_new_alert_ignores_spoofed_owner(self):
+        other = get_user_model().objects.create_user(
+            username="other_alert_target", password="test-only-password"
+        )
+        r = self.client.post("/api/alerts/", {
+            "stock_symbol": self.stock.symbol, "alert_type": "price_above",
+            "threshold": "300.00", "owner": other.pk
+        }, format="json")
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(AlertRule.objects.get(pk=r.data["id"]).owner, self.user)
+        self.assertNotIn("owner", r.data)
+
+    def test_legacy_alert_preserved_and_hidden(self):
+        legacy = AlertRule.objects.create(
+            stock=self.stock, alert_type="price_above",
+            threshold=Decimal("300.00")
+        )
+        self.assertEqual(self.client.get(f"/api/alerts/{legacy.pk}/").status_code, 404)
+        self.assertTrue(AlertRule.objects.filter(pk=legacy.pk, owner__isnull=True).exists())

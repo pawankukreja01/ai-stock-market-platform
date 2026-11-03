@@ -28,6 +28,45 @@ MarketPulse is a full-stack stock-market research and portfolio analytics applic
 
 ---
 
+## Review build — research readiness and safer historical refresh
+
+The development branch now provides a **Research Health** page at
+`/research-health` in the authenticated sidebar. It uses the local-only
+`GET /api/research-readiness/` endpoint, with an optional `?symbols=AAPL,MSFT`
+parameter (maximum 20 symbols). The endpoint reuses the existing
+`audit_research_health` calculations, reports observed prices, quote source
+timestamps, missing fundamental/news coverage, and explicit approximation
+caveats; it does **not** download market data, fit models, or change records.
+An unauthenticated request is rejected.
+
+**Historical ingestion must be reviewed before applying provider revisions.**
+`ingest_stock_history` now supports:
+
+```bash
+# The restored test database only; never use your original local database.
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py ingest_stock_history ABF.L --dry-run
+```
+
+`--dry-run` previews the provider response and adjustment-factor revisions
+without writing any prices or stock currency metadata. If existing and
+incoming adjusted/close factors differ by at least 10%, a regular ingest
+fails **before database writes**, with a review message. After checking the
+data and verifying the intended provider convention, the optional
+`--allow-adjustment-revisions` flag explicitly authorizes the revision.
+**Do not use the authorization flag without reviewing the data and preserving
+a backup.** This protects large changed adjustment factors, but is not a
+general proof of provider correctness, and other ordinary historical revisions
+can still update data. The command itself requires provider availability;
+it is not an offline test.
+
+Yahoo Finance may return HTTP 429 (rate limiting). Do not repeatedly retry
+or attempt to bypass provider limits. Existing local prices and research
+health checks remain available while the provider is inaccessible.
+The original `ai_stock_market` database must be preserved. The latest
+readiness and provider safeguards are research tooling, not a declaration
+that predictive models outperform baselines.
+
 ## Main capabilities
 
 The current application includes the following areas:
@@ -654,3 +693,336 @@ Never commit `.env`, database passwords, API credentials, private user media, ge
 6. Review `git status --short` and `git diff --check` before committing.
 
 For bugs, include the relevant command, full error output, and the affected feature. Never include passwords, tokens, or private user data in an issue or log excerpt.
+
+---
+
+## Personal-use yfinance price monitor (opt-in)
+
+The stock research page checks the **stored** quote API approximately once
+per minute while the browser tab is visible. This does not contact Yahoo
+Finance. To refresh stored quotes from yfinance, and evaluate matching price
+alerts only when the provider timestamp is recent, run the following in a
+**separate terminal** with your existing backend environment activated:
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py monitor_market \\
+  --symbols AAPL MSFT NVDA --continuous --interval-seconds 300
+```
+
+- Use **Ctrl+C** to stop monitoring. Omit `--continuous` for one cycle.
+- The command is opt-in and does **not** automatically start with the Django
+  or frontend servers. It requires an explicit `DB_NAME` override and refuses
+  the protected original `ai_stock_market` database.
+- The watchlist is limited to 15 stocks per process to avoid accidental
+  large-volume polling. Each cycle has a 1-second minimum delay between
+  requests, a 60-second minimum interval and conservative error reporting.
+  If Yahoo Finance throttles requests, increase the interval or reduce the
+  watchlist. The interval starts **after** each completed cycle.
+- Quotes may be delayed or daily-close fallback data. The monitor checks the
+  **provider's source timestamp**, not the latest fetch time. Price alerts
+  are evaluated only when the source timestamp is at most 30 minutes old by
+  default; missing or stale quotes do **not** fall back to historical closing
+  prices and do **not** change the alert's condition state.
+- Triggered events use existing deduplication while the condition remains
+  met. The monitor updates **only price** alerts and does not refresh news,
+  sentiment, fundamentals, charts' daily history, or ML models.
+- For personal research only; not guaranteed exchange-real-time, and it may
+  not work outside market hours. Confirm the provider license before any
+  redistribution or commercial use.
+- This **writes** retrieved quotes and may create alert events in the
+  explicitly selected *restored test* database. It never performs a trade.
+  The historic backup and original database must remain untouched.
+
+If you prefer not to keep a separate terminal process running, you can
+schedule an equivalent single-cycle command using a local scheduler (launchd
+on macOS), but configure the same explicit database, intervals and logging,
+and do not run duplicate monitors for the same watchlist.
+
+---
+
+## Controlled personal research data sync
+
+Latest intraday quotes and historical OHLC records are separate datasets.
+The quote monitor does not update the history used for daily indicators
+and ML training. To preview a small historical update without fetching
+external data or writing to the database:
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py sync_personal_research \\
+  --symbols AAPL MSFT NVDA --period 1y
+```
+
+The command prints a DRY RUN. To actually refresh the selected stocks'
+historical prices, add `--execute` after reviewing the plan:
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py sync_personal_research \\
+  --symbols AAPL MSFT NVDA --period 1y --execute
+```
+
+Use `--include-news`, `--include-sentiment` (requires news), and/or
+`--include-fundamentals` only when needed. News and fundamental downloads
+are provider-dependent; sentiment analysis may require cached/downloaded
+ML assets. A failed step is reported but does not erase existing records,
+and independent successful steps remain committed. The history downloader
+uses upserts, including existing records within the specified period: this
+is **not** a strictly append-only synchronization.
+
+Safety constraints:
+
+- The command permits writes **only** when both the explicit environment
+  variable and configured database name equal `marketpulse_restored_test`.
+  It refuses the original `ai_stock_market` database.
+- The default is read-only dry run. It requires `--execute` to call ingestion.
+- At most ten active symbols can be selected. Yahoo Finance may delay or
+  throttle data. There is a configurable per-ticker delay (default two seconds).
+- Each invocation performs one batch, not a background schedule. Use a
+  separately configured scheduler only after manual verification.
+- This refresh updates historical prices (and optional research inputs);
+  it does **not** retrain models or certify forecasting skill.
+- Preserve the original backup and do not run bulk ingestions before
+  verifying the small watchlist.
+ 
+---
+
+## Model accuracy and reliability roadmap (steps 22–26)
+
+The prediction endpoint and SHAP explanation were verified locally for
+ABF.L (Django HTTP 200). That confirms operation, **not predictive skill**.
+Price/volume-only experiments previously failed to outperform all three
+simple baselines across the tested AAPL, MSFT and NVDA windows.
+
+**Step 23 – Data integrity:** Existing read-only `audit_prediction_prices`
+flags invalid OHLC, suspect corporate actions, adjustment-factor changes and
+future-dated records. It does not change prices or claim that flagged changes
+are errors. Use the explicitly selected restored test database.
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py audit_prediction_prices \\
+  --symbols AAPL MSFT NVDA ABF.L
+```
+
+**Steps 24–25 – Controlled model research:** `validate_stock_forecasts`
+supports the earlier `price_volume` feature set (default) and the opt-in
+`market_aligned` feature set. In market-aligned mode, training includes
+the same market-relative features used by the live forecast API when the
+complete, local, same-market benchmark cache is available: S&P 500 for US,
+FTSE 100 for UK. Cache misses fail closed **without fetching yfinance or
+changing which features were evaluated**. This does not change the live API
+model or certify any model as accurate. Reported fold metrics and the
+three baselines use the same out-of-sample dates.
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py validate_stock_forecasts \\
+  --symbols AAPL MSFT NVDA ABF.L --model random_forest \\
+  --horizon 5 --min-train 500 --test-size 100 \\
+  --feature-set market_aligned --common-window
+```
+
+**Step 25.2 – Controlled regularization diagnostic:** The validator also
+supports two fixed, research-only candidates: `conservative_forest` (shallow
+trees with larger leaves) and `zero_anchor_ridge` (regularized linear model
+with no fitted intercept, shrinking toward zero rather than historical bullish
+bias). The live forecasting endpoints and default models are unchanged.
+
+Use `--as-of YYYY-MM-DD` to freeze a research window reproducibly. For
+example, try one candidate at a time with `--as-of 2026-06-30` and
+`--feature-set market_aligned` on AAPL, MSFT, NVDA and ABF.L, with the
+same `--min-train 500 --test-size 100 --horizon 5 --common-window`
+configuration as before. This is *not* a previously untouched final
+holdout: the older November 2026 results have already been inspected.
+Do not present retrospective model selection on that window as new
+independent out-of-sample confirmation. Future forward-collected
+observations or a pre-registered separate asset cohort are needed for
+a new final validation. Neither candidate is automatically selected.
+
+**Step 25.12 – Diagnose Yahoo historical adjusted-price repairs safely:** Run
+the **read-only** provider comparison before considering any historical
+re-ingestion. The existing \`ingest_stock_history\` command uses
+\`repair=True\` and **updates existing historical records**; do not invoke
+it to investigate an unexplained adjustment shift. The preview requires
+the explicit \`marketpulse_restored_test\` database and never calls
+\`update_or_create\` or writes any prices.
+
+\`\`\`bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py preview_historical_adjustments \
+  --symbols ABF.L
+\`\`\`
+
+The preview requests Yahoo's \`repair=False\` and \`repair=True\` in-memory,
+counts adjusted/close factor mismatches on overlapping trading dates,
+prints stored and current repaired-provider factor jumps, and reports
+Yahoo's \`Repaired?\` flags. These are diagnostics, not proof that Yahoo
+adjusted prices or historical corporate actions were correct. In
+particular, differences between download modes do **not** justify
+automatically overwriting historical prices. Current ML return targets
+use stored \`close_price\`, not \`adjusted_close\`.
+
+**Step 25.5 – Paired feature ablation (recommended):** Instead of
+comparing two separately prepared datasets, the read-only
+\`compare_forecast_feature_sets\` command intersects both feature matrices
+**before** chronological splits. It verifies identical future-return targets,
+uses identical expanding walk-forward train/test dates and purge gaps, and
+checks that all baseline metrics are identical. A missing same-market
+benchmark cache causes an explicit skipped stock, never a fallback.
+The command explicitly refuses databases other than
+\`marketpulse_restored_test\`.
+
+\`\`\`bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py compare_forecast_feature_sets \
+  --symbols AAPL MSFT NVDA ABF.L \
+  --model zero_anchor_ridge --horizon 5 \
+  --min-train 500 --test-size 100 --as-of 2026-06-30
+\`\`\`
+
+A positive \`market feature improvement\` means lower model MAE from
+market-aligned features on exactly the same out-of-sample dates. The
+comparison is a **historical development diagnostic**, not untouched
+independent evidence or a claim of profitable trading. The default
+comparison prints a brief scorecard; optional \`--output\` creates a new
+JSON file without overwriting an existing one.
+
+Run the price-only protocol separately to compare **feature groups**, not
+as evidence of deployable forecasting skill. Use fixed training procedures
+and a separately untouched final time window for any subsequent model
+selection; avoid tuning repeatedly against the same held-out results.
+Do not mix up one-day and five-day absolute errors. Neither mode forecasts
+reliable profitable trades by default.
+
+**Step 26 – Data-health monitoring:** The new read-only
+`audit_research_health` management command reports historical coverage,
+provider-source quote timestamp age, invalid OHLC flags, and annual/
+quarterly financial statement availability, plus missing news articles.
+Quote freshness uses approximate exchange-local US/UK regular trading
+hours: a Friday-close quote isn't treated as progressively stale over
+a normal weekend. The report includes actual quote age and the age
+relative to the current/most recent ordinary session reference.
+**This is not a verified trading calendar:** holidays, early closes and
+trading halts can make freshness flags inaccurate. It does not contact
+Yahoo, retrain models, send notifications or update any database.
+
+```bash
+DB_NAME=marketpulse_restored_test python manage.py audit_research_health \\
+  --symbols AAPL MSFT NVDA ABF.L
+```
+
+Use `--strict` to exit nonzero when a data-quality/freshness issue is
+found, or `--output /path/to/new-report.json` to write a new JSON report
+without overwriting an existing file. Stale quotes **during regular
+trading hours** need investigating; outside regular hours, quote age
+is compared with the most recent ordinary weekday close instead of the
+current wall clock. Missing quarterly reports or news articles are
+availability gaps, not fabricated zero results. This checks data health,
+not model accuracy. Scheduling and production alerting require a
+separate future implementation and operational review.
+
+The protected original `ai_stock_market` database and its backup remain
+unchanged. These commands are for the explicitly selected restored test
+database. No migrations or trading operations are required.
+
+---
+
+## Forecast evidence and launch gates
+
+The ML prediction API at `GET /api/ml-prediction/?symbol=AAPL&horizon=5&model=random_forest`
+returns a *research forecast* of the return after hypothetical execution at the
+**next session close**. It does not know that future entry price, so the API
+does not assert a current-to-future target share price. It returns training,
+calibration and test diagnostics and, on the development branch, an `evidence`
+object with the following fields:
+
+- `model_mae`: mean absolute forecast error on the chronologically held-out test block.
+- `baselines.zero_return` and `baselines.training_mean_return`: the same error metric
+  calculated on that *same* test block. The mean-return baseline is fitted only on
+  the training block.
+- `mae_skill_vs_best_baseline`: relative error reduction versus the stronger
+  of those baselines. Negative values mean the ML model performs worse.
+- `holdout_interval_coverage`: empirical test coverage of the range calibrated
+  on a separate historical block, not a guarantee of future coverage.
+- `price_age_days`, `approx_non_overlapping_holdout_windows`, and `warnings`:
+  basic validity checks. Multi-day overlapping labels can greatly overstate
+  the effective number of test observations.
+- `ready_for_live_trading`: **always false**. One holdout comparison cannot
+  establish a production trading edge.
+
+The evidence status `promising_holdout_only` means a *single historical holdout*
+met basic diagnostic thresholds, **not** that the stock is likely to rise or that
+a strategy is profitable. `limited_evidence` marks cases needing particular caution.
+No model-selection or recommendation scoring logic should consume the evidence
+status as a trading signal without a separate rigorous study.
+
+### Read-only stored data audit
+
+Run against the **restored development database**, never the original user database:
+
+```bash
+cd backend
+DB_NAME=marketpulse_restored_test python manage.py audit_market_readiness
+```
+
+This lists the proportion of active stocks with at least 300 positive stored
+closes and a price date within seven calendar days, plus stocks without any
+fundamental or news records. It **does not download data**, update the database,
+assess financial-data licensing, or certify model accuracy.
+
+For one-symbol ingestion where a provider permits the intended use, see
+`python manage.py refresh_market_data --symbol AAPL --period 5y`.
+Back up the working database before running any ingestion, and review provider
+rate limits, exchange entitlements, timestamps, and adjustment policies.
+
+### Repeatable multi-stock forecasting study
+
+Use the restored database to compare one ML model against three simple
+baselines across multiple symbols and expanding walk-forward folds. The
+command reads stored prices only, without downloading new quotes or changing
+any tables:
+
+```bash
+cd backend
+DB_NAME=marketpulse_restored_test python manage.py validate_stock_forecasts \\
+  --symbols AAPL MSFT GOOGL AMZN NVDA \\
+  --model random_forest --horizon 5 --min-train 500 --test-size 100 \\
+  --output ~/Desktop/marketpulse_walk_forward_5d.json
+```
+
+The output file is optional; existing report files are **not overwritten**.
+Run this separately for the competing models and horizons; record exceptions,
+failed baselines, fold-to-fold variation and excluded stocks. The command
+does **not** include dynamically retrieved benchmark features, cross-sectional
+portfolio allocation, survivorship correction, or realistic trading costs.
+Never select the best-performing model and cite those same test dates as an
+unbiased final validation; reserve new forward dates for confirmation.
+
+### Requirements before a real public market launch
+
+1. Run a multi-market, multi-stock **purged walk-forward study** of all candidate
+   models versus trivial baselines. Use corporate-action-adjusted price histories
+   where appropriate, realistic costs, delisting/survivorship checks and frozen
+   evaluation periods. Report per-horizon and per-regime failures, not just averages.
+2. Validate data-provider commercial redistribution rights, exchange market-data
+   agreements, and the availability of delayed/realtime quotes for the proposed
+   audience. A development-only Yahoo Finance feed should not be assumed to
+   authorize a paid production product.
+3. Implement and validate production ingestion scheduling, retries, idempotent
+   upserts, source provenance, failure alerting, stale-data gating, and model
+   re-training/monitoring. A forecast based on old data must never masquerade
+   as an up-to-date signal.
+4. Deploy on an HTTPS environment with real secrets management, persistent
+   PostgreSQL backups and recovery drills, user account protections, rate
+   limiting, dependency scanning, CI/CD rollback, observability and audit trails.
+   Validate session cookies and CSRF in the *real* frontend/backend origin setup.
+5. Perform cross-user authorization tests, browser/mobile QA, accessibility,
+   billing/privacy reviews if applicable, and jurisdiction-specific legal review
+   before offering personalized investment recommendations. Financial research
+   must not be marketed as guaranteed stock-price prediction.
+6. Require a live staged smoke test on a **copy** of user market data. CI passing
+   on synthetic test data is not proof that external APIs, models and deploys work.
+
+The development branch is **not** a production release until those gates are
+demonstrably passed. The original `ai_stock_market` PostgreSQL database and
+its backup should remain untouched during branch testing.

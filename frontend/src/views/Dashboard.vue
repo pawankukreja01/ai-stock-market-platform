@@ -683,28 +683,69 @@
 
 
 
-    <!-- Stock price chart -->
+    <!-- Pick any stock from the existing catalogue for technical research. -->
+    <section
+      v-if="stocks.length > 0"
+      class="chart-stock-toolbar"
+      aria-label="Price history stock selection"
+    >
+      <div class="chart-stock-intro">
+        <span class="chart-stock-eyebrow">CHART &amp; TECHNICAL ANALYSIS</span>
+        <h2>Explore a stock</h2>
+        <p>Switch the price chart, market regime, performance, and explainability to any tracked stock.</p>
+      </div>
+
+      <div class="chart-stock-controls">
+        <div class="chart-stock-field">
+          <label for="chart-stock-search">Find a stock</label>
+          <input
+            id="chart-stock-search"
+            v-model="chartStockSearch"
+            type="search"
+            placeholder="Symbol or company name"
+            autocomplete="off"
+          />
+        </div>
+        <div class="chart-stock-field">
+          <label for="chart-stock-select">Stock for chart</label>
+          <select
+            id="chart-stock-select"
+            v-model="chartSymbol"
+            :disabled="loadingStocks"
+          >
+            <option
+              v-if="selectedChartStock && !chartStockOptions.some(stock => stock.id === selectedChartStock.id)"
+              :value="selectedChartStock.symbol"
+            >
+              {{ selectedChartStock.symbol }} — {{ selectedChartStock.company_name }}
+            </option>
+            <option
+              v-for="stock in chartStockOptions"
+              :key="stock.id"
+              :value="stock.symbol"
+            >
+              {{ stock.symbol }} — {{ stock.company_name }}
+            </option>
+          </select>
+        </div>
+        <p class="chart-stock-count" role="status">
+          {{ chartStockOptions.length }} matching {{ chartStockOptions.length === 1 ? "stock" : "stocks" }}
+        </p>
+      </div>
+    </section>
 
     <StockPriceChart
-
-      v-if="stocks.length > 0"
-
-      :stock-id="stocks[0].id"
-
-      :symbol="stocks[0].symbol"
-
+      v-if="selectedChartStock"
+      :key="selectedChartStock.id"
+      :stock-id="selectedChartStock.id"
+      :symbol="selectedChartStock.symbol"
     />
 
-
-
-    <!-- Explainability panel -->
-
+    <!-- Explainability follows the same chart stock, not the news selector. -->
     <ExplainabilityPanel
-
-      v-if="stocks.length > 0"
-
-      :symbol="selectedSymbol || stocks[0].symbol"
-
+      v-if="selectedChartStock"
+      :key="selectedChartStock.symbol"
+      :symbol="selectedChartStock.symbol"
     />
 
 
@@ -1064,6 +1105,32 @@ const stocksError = ref("");
 
 
 const selectedSymbol = ref("");
+
+// Chart selection is independent of quote and news selectors.
+const chartSymbol = ref("");
+const chartStockSearch = ref("");
+const selectedChartStock = computed(
+  () => stocks.value.find(stock => stock.symbol === chartSymbol.value) || null
+);
+const chartStockOptions = computed(() => {
+  const query = chartStockSearch.value.trim().toLowerCase();
+  if (!query) return stocks.value;
+  return stocks.value.filter(stock =>
+    String(stock.symbol || "").toLowerCase().includes(query) ||
+    String(stock.company_name || "").toLowerCase().includes(query)
+  );
+});
+
+watch(chartSymbol, symbol => {
+  if (!symbol) return;
+  // Clear the filter after choosing so the next selection can use the full list.
+  chartStockSearch.value = "";
+  try {
+    window.localStorage.setItem("marketpulse:chart-symbol", symbol);
+  } catch {
+    // Browser privacy settings may disable storage; selection still works.
+  }
+});
 
 
 
@@ -2121,6 +2188,17 @@ async function loadStocks() {
       )?.symbol ||
       stocks.value[0]?.symbol ||
       "";
+
+    // Restore the chart choice across visits where browser storage allows.
+    let preferredChartSymbol = "";
+    try {
+      preferredChartSymbol = window.localStorage.getItem("marketpulse:chart-symbol") || "";
+    } catch {
+      // Browser storage may be disabled.
+    }
+    chartSymbol.value = stocks.value.find(
+      stock => stock.symbol === preferredChartSymbol
+    )?.symbol || selectedSymbol.value;
 
     // Quote selection is independent of the news sentiment selector.
     quoteSymbol.value = selectedSymbol.value;
@@ -4543,6 +4621,91 @@ onMounted(() => {
   .market-overview-retry {
     transition: none;
   }
+}
+
+
+/* Dashboard price-history stock picker: independent from quotes and sentiment. */
+.chart-stock-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 24px 0 14px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.chart-stock-intro {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.chart-stock-eyebrow {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: .13em;
+  font-weight: 700;
+}
+.chart-stock-intro h2 {
+  margin: 7px 0 5px;
+  color: var(--text-primary);
+  font-size: 20px;
+}
+.chart-stock-intro p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.chart-stock-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex: 1 1 450px;
+  justify-content: flex-end;
+}
+.chart-stock-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 175px;
+}
+.chart-stock-field label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.chart-stock-field input,
+.chart-stock-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 9px 11px;
+  color: var(--text-primary);
+  background: var(--surface);
+  font-size: 13px;
+}
+.chart-stock-field input:focus,
+.chart-stock-field select:focus {
+  outline: 3px solid rgb(37 99 235 / 12%);
+  border-color: var(--accent);
+}
+.chart-stock-count {
+  margin: 0 0 11px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .chart-stock-toolbar { padding: 16px; }
+  .chart-stock-controls { justify-content: flex-start; }
+  .chart-stock-field { flex-basis: 100%; }
+  .chart-stock-count { margin-bottom: 0; }
 }
 
 </style>

@@ -15,7 +15,13 @@ from .serializers import (
     FundamentalSerializer,
 )
 
-from .risk_engine import calculate_risk_metrics, fetch_benchmark_prices
+from .risk_engine import calculate_risk_metrics
+from .benchmark_data import (
+    BENCHMARK_TICKERS,
+    fetch_benchmark_prices as fetch_cached_benchmark_prices,
+)
+from stocks.catalog import market_for_exchange
+from stocks.models import Stock
 
 
 class HistoricalPriceListView(generics.ListAPIView):
@@ -134,34 +140,69 @@ class BenchmarkComparisonView(APIView):
                 status=400,
             )
 
-        sector_etf = self.SECTOR_ETFS.get(
-            sector,
-            "SPY",
-        )
+        exchange = request.query_params.get("exchange", "").strip()
+        market = market_for_exchange(exchange) if exchange else "US"
+        if market not in ("US", "UK"):
+            return Response(
+                {"error": "Unsupported exchange for benchmark comparison."},
+                status=400,
+            )
 
-        benchmarks = {
-            "sp500": {
-                "symbol": "^GSPC",
-                "name": "S&P 500",
-            },
-            "nasdaq100": {
-                "symbol": "^NDX",
-                "name": "NASDAQ-100",
-            },
-            "sector": {
-                "symbol": sector_etf,
-                "name": (
-                    f"{sector_etf} Sector ETF"
-                    if sector_etf != "SPY"
-                    else "S&P 500 ETF"
-                ),
-            },
-        }
+        if market == "UK":
+            # Avoid applying US sector ETFs and NASDAQ comparisons to UK
+            # equities. A missing comparison is preferable to a wrong one.
+            benchmarks = {
+                "sp500": {"symbol": "^FTSE", "name": "FTSE 100"},
+                "nasdaq100": {"symbol": None, "name": "Not applicable"},
+                "sector": {"symbol": None, "name": "UK sector benchmark unavailable"},
+            }
+        else:
+            sector_etf = self.SECTOR_ETFS.get(sector, "SPY")
+            benchmarks = {
+                "sp500": {"symbol": "^GSPC", "name": "S&P 500"},
+                "nasdaq100": {"symbol": "^NDX", "name": "NASDAQ-100"},
+                "sector": {
+                    "symbol": sector_etf,
+                    "name": (
+                        f"{sector_etf} Sector ETF"
+                        if sector_etf != "SPY"
+                        else "S&P 500 ETF"
+                    ),
+                },
+            }
 
         result = {}
 
         try:
             for key, benchmark in benchmarks.items():
+                if not benchmark["symbol"]:
+                    result[key] = {
+                        "symbol": None,
+                        "name": benchmark["name"],
+                        "dates": [],
+                        "close": [],
+                    }
+                    continue
+
+                if market == "UK":
+                    # Reuse the same cached FTSE series as UK ML/risk.
+                    # This avoids another identical provider request.
+                    series = fetch_cached_benchmark_prices(
+                        pd.DataFrame({"date": [parsed_start_date, parsed_end_date]}),
+                        exchange=exchange,
+                    )
+                    series = series.loc[
+                        (series.index >= pd.Timestamp(parsed_start_date))
+                        & (series.index <= pd.Timestamp(parsed_end_date))
+                    ]
+                    result[key] = {
+                        "symbol": benchmark["symbol"],
+                        "name": benchmark["name"],
+                        "dates": [value.strftime("%Y-%m-%d") for value in series.index],
+                        "close": [float(value) for value in series.values],
+                    }
+                    continue
+
                 ticker = yf.Ticker(
                     benchmark["symbol"]
                 )
@@ -208,6 +249,7 @@ class BenchmarkComparisonView(APIView):
                     "start_date": start_date,
                     "end_date": end_date,
                     "sector": sector,
+                    "market": market,
                     "benchmarks": result,
                 }
             )
@@ -404,22 +446,31 @@ class RiskMetricsView(APIView):
         actual_start_date = stock_dates[0]
         actual_end_date = stock_dates[-1]
 
-        benchmark_symbol = "^GSPC"
+        # Map each stock to a *same-market* risk benchmark. Never
+        # silently compute UK-stock beta against the US S&P 500.
+        market = market_for_exchange(stock.stock.exchange)
+        benchmark_symbol = BENCHMARK_TICKERS.get(market)
+        benchmark_prices = None
+        benchmark_status = "unsupported_market" if not benchmark_symbol else "unavailable"
 
-        try:
-            benchmark_prices = fetch_benchmark_prices(
-                benchmark_symbol=benchmark_symbol,
-                start_date=actual_start_date.isoformat(),
-                end_date=(
-                    actual_end_date + timedelta(days=1)
-                ).isoformat(),
-            )
+        if benchmark_symbol:
+            try:
+                benchmark_series = fetch_cached_benchmark_prices(
+                    pd.DataFrame(price_records),
+                    exchange=stock.stock.exchange,
+                )
+                benchmark_status = benchmark_series.attrs.get(
+                    "status", "available" if not benchmark_series.empty else "unavailable"
+                )
+                if not benchmark_series.empty:
+                    benchmark_prices = benchmark_series
+            except Exception:
+                # Standalone stock risk figures are still meaningful, but
+                # beta/correlation must remain null without benchmark prices.
+                benchmark_status = "unavailable"
 
-            if benchmark_prices.empty:
-                benchmark_prices = None
-
-        except Exception:
-            benchmark_prices = None
+        # A benchmark label indicates intended comparison, not proof of
+        # actual coverage. Consumers must also inspect benchmark_status.
 
         try:
             risk_metrics = calculate_risk_metrics(
@@ -445,9 +496,8 @@ class RiskMetricsView(APIView):
                 "company_name": stock.stock.company_name,
                 "start_date": actual_start_date,
                 "end_date": actual_end_date,
-                "benchmark": risk_metrics.get(
-                    "benchmark"
-                ),
+                "benchmark": risk_metrics.get("benchmark"),
+                "benchmark_status": benchmark_status,
                 "risk_metrics": risk_metrics,
             }
         )    

@@ -39,6 +39,34 @@ RISK_TOLERANCE_WEIGHTS = {
 }
 
 
+def horizon_adjusted_weights(risk_tolerance, horizon_months=12):
+    """Transparent, provisional preference weighting; NOT a return forecast.
+
+    Short horizons place more weight on recent momentum and less on
+    fundamentals. Longer horizons reverse this preference. All shifts
+    preserve the total weight and the selected risk-tolerance baseline.
+    A dedicated walk-forward study must validate these heuristic choices.
+    """
+    if risk_tolerance not in RISK_TOLERANCE_WEIGHTS:
+        raise ValueError("Unsupported risk tolerance.")
+    if isinstance(horizon_months, bool) or not isinstance(horizon_months, int):
+        raise ValueError("horizon_months must be an integer.")
+    if not 1 <= horizon_months <= 600:
+        raise ValueError("horizon_months must be between 1 and 600.")
+
+    weights = dict(RISK_TOLERANCE_WEIGHTS[risk_tolerance])
+    if horizon_months <= 6:
+        shift = 0.08
+    elif horizon_months >= 24:
+        shift = -0.08
+    else:
+        shift = 0.0
+
+    weights["momentum"] = round(weights["momentum"] + shift, 4)
+    weights["fundamentals"] = round(weights["fundamentals"] - shift, 4)
+    return weights
+
+
 def _average_available(values, minimum=1):
     available = [
         float(value)
@@ -264,15 +292,14 @@ def _explanations(components):
 
 
 def rank_feature_records(feature_records, *, risk_tolerance="moderate",
-                         max_candidates=20):
+                         max_candidates=20, horizon_months=12):
     """
     Rank already-extracted feature records.
 
     Useful for deterministic tests and for keeping data retrieval
     separate from the ranking logic.
     """
-    if risk_tolerance not in RISK_TOLERANCE_WEIGHTS:
-        raise ValueError("Unsupported risk tolerance.")
+    weights = horizon_adjusted_weights(risk_tolerance, horizon_months)
 
     if not 1 <= max_candidates <= 100:
         raise ValueError("max_candidates must be between 1 and 100.")
@@ -283,7 +310,6 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
     ]
 
     components_by_record = _component_ranks(eligible)
-    weights = RISK_TOLERANCE_WEIGHTS[risk_tolerance]
 
     ranked = []
 
@@ -316,6 +342,8 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
 
     return {
         "risk_tolerance": risk_tolerance,
+        "horizon_months": horizon_months,
+        "weighting_method": "provisional_horizon_adjusted_research_heuristic",
         "candidate_universe_size": len(feature_records),
         "eligible_candidate_count": len(eligible),
         "scored_candidate_count": len(ranked),
@@ -331,7 +359,7 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
 
 
 def recommend_stocks(*, risk_tolerance="moderate", market=None,
-                     max_candidates=20, as_of=None):
+                     max_candidates=20, horizon_months=12, as_of=None):
     """
     Extract features for all active stocks with recent stored prices,
     then rank the eligible universe. max_candidates limits the response,
@@ -383,4 +411,5 @@ def recommend_stocks(*, risk_tolerance="moderate", market=None,
         features,
         risk_tolerance=risk_tolerance,
         max_candidates=max_candidates,
+        horizon_months=horizon_months,
     )

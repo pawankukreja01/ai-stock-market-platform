@@ -71,6 +71,14 @@ export const getLatestQuote = async (symbol) => {
   return response.data;
 };
 
+// Authenticated, stored-data-only research readiness report.
+export const getResearchReadiness = async (symbols = "") => {
+  const response = await api.get("/research-readiness/", {
+    params: symbols ? { symbols } : {},
+  });
+  return response.data;
+};
+
 // HISTORICAL PRICES
 export const getHistoricalPrices = async (stockId, startDate, endDate) => {
   const response = await api.get("/historical-prices/", {
@@ -84,9 +92,9 @@ export const getHistoricalPrices = async (stockId, startDate, endDate) => {
 };
 
 // BENCHMARK COMPARISON
-export const getBenchmarkComparison = async (startDate, endDate, sector = "") => {
+export const getBenchmarkComparison = async (startDate, endDate, sector = "", exchange = "") => {
   const response = await api.get("/benchmark-comparison/", {
-    params: { start_date: startDate, end_date: endDate, sector },
+    params: { start_date: startDate, end_date: endDate, sector, exchange },
   });
   return response.data;
 };
@@ -313,6 +321,20 @@ export const getCsrfToken = async () => {
 
   return csrfTokenPromise;
 };
+
+// Django session authentication requires CSRF protection for every write,
+// not just login and profile updates. GET requests (including the token
+// bootstrap endpoint) are deliberately excluded to avoid recursion.
+const csrfProtectedMethods = new Set(["post", "put", "patch", "delete"]);
+
+api.interceptors.request.use(async (config) => {
+  if (csrfProtectedMethods.has(String(config.method || "get").toLowerCase())) {
+    const token = await getCsrfToken();
+    config.headers.set("X-CSRFToken", token);
+  }
+
+  return config;
+});
 
 const authPost = async (url, payload = {}) => {
   const csrfToken = await getCsrfToken();

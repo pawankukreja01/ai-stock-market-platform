@@ -3,6 +3,7 @@ from django.test import SimpleTestCase
 from .recommendation_engine import (
     RISK_TOLERANCE_WEIGHTS,
     rank_feature_records,
+    horizon_adjusted_weights,
 )
 
 
@@ -177,3 +178,30 @@ class RecommendationEngineTests(SimpleTestCase):
         }
 
         self.assertNotEqual(low_scores, high_scores)
+
+    def test_horizon_weights_are_transparent_and_preserve_total(self):
+        short = horizon_adjusted_weights("moderate", 3)
+        medium = horizon_adjusted_weights("moderate", 12)
+        long_term = horizon_adjusted_weights("moderate", 60)
+
+        self.assertGreater(short["momentum"], medium["momentum"])
+        self.assertGreater(long_term["fundamentals"], medium["fundamentals"])
+        self.assertLess(long_term["momentum"], medium["momentum"])
+        for item in (short, medium, long_term):
+            self.assertAlmostEqual(sum(item.values()), 1.0, places=6)
+            self.assertTrue(all(0 <= weight <= 1 for weight in item.values()))
+
+    def test_horizon_does_change_research_scores_without_fabricating_forecasts(self):
+        short = rank_feature_records(self.records, horizon_months=3)
+        long_term = rank_feature_records(self.records, horizon_months=60)
+        self.assertNotEqual(short["scoring_weights"], long_term["scoring_weights"])
+        self.assertEqual(short["horizon_months"], 3)
+        self.assertEqual(long_term["horizon_months"], 60)
+        self.assertFalse(short["forecast_included"])
+        self.assertFalse(long_term["forecast_included"])
+
+    def test_unsupported_horizon_cannot_be_scored(self):
+        for value in (0, 601, True, 3.5):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    horizon_adjusted_weights("moderate", value)

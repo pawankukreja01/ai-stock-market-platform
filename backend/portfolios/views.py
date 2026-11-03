@@ -3,6 +3,7 @@ import math
 import pandas as pd
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -139,21 +140,31 @@ def calculate_currency_risk(holdings, currency):
 
 
 class PortfolioListCreateView(generics.ListCreateAPIView):
-    queryset = Portfolio.objects.prefetch_related("holdings__stock")
+    permission_classes = [IsAuthenticated]
     serializer_class = PortfolioSerializer
+
+    def get_queryset(self):
+        return Portfolio.objects.filter(owner=self.request.user).prefetch_related("holdings__stock")
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class PortfolioDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Portfolio.objects.prefetch_related("holdings__stock")
+    permission_classes = [IsAuthenticated]
     serializer_class = PortfolioSerializer
+
+    def get_queryset(self):
+        return Portfolio.objects.filter(owner=self.request.user).prefetch_related("holdings__stock")
 
 
 class PortfolioHoldingListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
     serializer_class = PortfolioHoldingSerializer
 
     def get_portfolio(self):
         if not hasattr(self, "_portfolio_instance"):
-            self._portfolio_instance = get_object_or_404(Portfolio, pk=self.kwargs["portfolio_id"])
+            self._portfolio_instance = get_object_or_404(Portfolio, pk=self.kwargs["portfolio_id"], owner=self.request.user)
         return self._portfolio_instance
 
     def get_queryset(self):
@@ -173,17 +184,18 @@ class PortfolioHoldingListCreateView(generics.ListCreateAPIView):
 
 
 class PortfolioHoldingDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
     serializer_class = PortfolioHoldingSerializer
 
     def get_portfolio(self):
         if not hasattr(self, "_portfolio_instance"):
-            self._portfolio_instance = get_object_or_404(Portfolio, pk=self.kwargs["portfolio_id"])
+            self._portfolio_instance = get_object_or_404(Portfolio, pk=self.kwargs["portfolio_id"], owner=self.request.user)
         return self._portfolio_instance
 
     def get_queryset(self):
         return (
             PortfolioHolding.objects
-            .filter(portfolio_id=self.kwargs["portfolio_id"])
+            .filter(portfolio=self.get_portfolio())
             .select_related("stock", "portfolio")
         )
 
@@ -195,11 +207,13 @@ class PortfolioHoldingDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class PortfolioAnalysisView(APIView):
     """Estimate portfolio risk separately for each stored currency."""
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, portfolio_id):
         portfolio = get_object_or_404(
             Portfolio.objects.prefetch_related("holdings__stock"),
             pk=portfolio_id,
+            owner=request.user,
         )
         holdings = list(portfolio.holdings.select_related("stock"))
         portfolio_data = PortfolioSerializer(portfolio, context={}).data

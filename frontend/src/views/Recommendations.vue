@@ -6,8 +6,8 @@
         <p class="eyebrow">AI STOCK RESEARCH</p>
         <h1>Stock Recommendations</h1>
         <p class="subtitle">
-          Explore research rankings and an illustrative whole-share allocation
-          based on your selected investment parameters.
+          Understand US and UK stocks with evidence-based rankings, plain-language explanations
+          and an illustrative allocation — not a promise of future returns.
         </p>
       </div>
 
@@ -20,6 +20,20 @@
         {{ loading ? "Analysing…" : "Refresh analysis" }}
       </button>
     </header>
+
+    <section class="research-guide" aria-label="How to use MarketPulse recommendations">
+      <div class="research-guide-heading">
+        <span class="guide-label">START HERE</span>
+        <h2>Find investments you understand, not just high scores.</h2>
+        <p>Use the rankings as a shortlist to investigate. A high score does not tell you how much a stock will rise.</p>
+      </div>
+      <div class="guide-steps">
+        <div><span class="guide-number">01</span><strong>Choose your horizon</strong><p>Set your time frame and risk comfort. The current research ranking adjusts its evidence weights for your selected holding period; these adjustments are not validated return forecasts.</p></div>
+        <div><span class="guide-number">02</span><strong>Read the evidence</strong><p>Check price freshness, fundamentals, market risk, and news sentiment for every candidate.</p></div>
+        <div><span class="guide-number">03</span><strong>Compare before acting</strong><p>Research the stock page and potential downside. Forecasts are not currently part of these rankings.</p></div>
+      </div>
+      <p class="guide-caution">Research-only preview · Not personalised financial advice · You can lose money, including your original investment.</p>
+    </section>
 
     <section class="panel">
       <div class="section-heading">
@@ -53,9 +67,9 @@
         <div class="field">
           <label for="risk">Risk tolerance</label>
           <select id="risk" v-model="form.risk_tolerance">
-            <option value="conservative">Conservative</option>
+            <option value="low">Conservative</option>
             <option value="moderate">Moderate</option>
-            <option value="aggressive">Aggressive</option>
+            <option value="high">Aggressive</option>
           </select>
         </div>
 
@@ -76,6 +90,7 @@
             <option value="">All available markets</option>
             <option value="NASDAQ">NASDAQ</option>
             <option value="NYSE">NYSE</option>
+            <option value="LSE">London Stock Exchange (LSE)</option>
           </select>
         </div>
 
@@ -142,7 +157,7 @@
             <h2>Ranked stocks</h2>
             <p>
               Showing {{ data.results?.length ?? 0 }} stocks.
-              Scores are relative percentiles, not probabilities of profit.
+              Scores are relative percentiles, not probabilities of profit. Your selected horizon adjusts provisional scoring weights.
             </p>
           </div>
           <span class="pill">{{ data.risk_tolerance }} risk profile</span>
@@ -327,7 +342,7 @@
         <div class="section-heading">
           <div>
             <h2>Methodology and limitations</h2>
-            <p>Understand what this analysis does and does not measure.</p>
+            <p>Scoring weights vary with risk preference and time horizon. They are provisional research heuristics, not a validated prediction of future performance.</p>
           </div>
         </div>
 
@@ -457,6 +472,20 @@ loadRecommendations();
 </script>
 
 <style scoped>
+
+.research-guide{margin:0 0 24px;padding:28px;background:linear-gradient(135deg,#132d3e,#1c4350 65%,#215b5a);color:#f8fafc;border-radius:20px;box-shadow:0 18px 40px rgba(10,35,49,.15)}
+.research-guide-heading{max-width:780px}
+.guide-label{display:inline-block;font-size:11px;font-weight:750;letter-spacing:.13em;color:#a7f3d0;margin-bottom:12px}
+.research-guide h2{font-size:clamp(22px,2.5vw,30px);line-height:1.2;margin:0 0 10px;color:#fff}
+.research-guide-heading p{color:#d3e4e6;line-height:1.65;margin:0}
+.guide-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:24px}
+.guide-steps>div{border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.07);border-radius:14px;padding:18px}
+.guide-number{display:block;font-size:12px;font-weight:700;letter-spacing:.08em;color:#8ff0cb;margin-bottom:10px}
+.guide-steps strong{display:block;font-size:14px;color:#fff;margin-bottom:7px}
+.guide-steps p{color:#d1e4e7;font-size:13px;line-height:1.55;margin:0}
+.guide-caution{font-size:12px;line-height:1.5;color:#c0d4db;margin:18px 0 0}
+@media(max-width:860px){.guide-steps{grid-template-columns:1fr}.research-guide{padding:20px}}
+
 .recommendations-page {
   max-width: 1440px;
   margin: 0 auto;

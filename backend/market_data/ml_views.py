@@ -8,11 +8,13 @@ from ml_explainability import explain_prediction
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 
 from stocks.models import Stock
 from .models import HistoricalPrice
 from .benchmark_data import fetch_benchmark_prices
+from .prediction_quality import assess_prediction_evidence
 
 from ml_engine import (
     prepare_latest_feature_row,
@@ -76,6 +78,9 @@ class MLReturnPredictionView(APIView):
     This API predicts future returns, not guaranteed
     future prices.
     """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ml_prediction"
 
     DEFAULT_MODEL = "random_forest"
     DEFAULT_CONFIDENCE = 0.90
@@ -550,6 +555,20 @@ class MLReturnPredictionView(APIView):
             .iloc[-1]
         )
 
+        # Model skill must be compared to simple baselines on the *same*
+        # chronologically held-out observations. The diagnostics never
+        # retrain on calibration or test outcomes.
+        evidence = assess_prediction_evidence(
+            y_train=y_train,
+            y_test=y_test,
+            predictions=test_predictions,
+            horizon=horizon,
+            last_price_date=last_date,
+            as_of=timezone.localdate(),
+            confidence=confidence,
+            interval_coverage=empirical_test_coverage,
+        )
+
         # -------------------------------------------------
         # Response
         # -------------------------------------------------
@@ -640,6 +659,7 @@ class MLReturnPredictionView(APIView):
                 },
 
                 "explainability": explainability,
+                "evidence": evidence,
 
                 "validation": {
                     "mae": test_mae,

@@ -46,6 +46,7 @@ class StockRecommendationsViewTests(APITestCase):
             risk_tolerance="moderate",
             market="NASDAQ",
             max_candidates=10,
+            horizon_months=12,
         )
 
     def test_invalid_risk_tolerance_returns_400(self):

@@ -4,6 +4,7 @@ import pandas as pd
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 
 from stocks.models import Stock
@@ -94,6 +95,9 @@ class BacktestView(APIView):
 
     Transaction costs and slippage are explicit assumptions.
     """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ml_backtest"
 
     DEFAULT_TRANSACTION_COST_BPS = 5.0
     DEFAULT_SLIPPAGE_BPS = 5.0

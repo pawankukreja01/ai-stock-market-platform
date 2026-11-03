@@ -152,3 +152,26 @@ class StockCatalogAPITests(TestCase):
 
         self.assertEqual(Stock.objects.count(), count_before)
         self.assertFalse(Stock.objects.filter(symbol="SHEL.L").exists())
+
+    def test_stock_catalogue_cannot_be_created_modified_or_deleted_over_api(self):
+        stock_count = Stock.objects.count()
+        create = self.client.post(self.url, {
+            "symbol": "ATTACK", "company_name": "Unauthorized",
+            "exchange": "NASDAQ",
+        }, format="json")
+        self.assertEqual(create.status_code, 405)
+        update = self.client.patch(
+            f"{self.url}{self.aapl.pk}/",
+            {"company_name": "Changed without permission"},
+            format="json",
+        )
+        self.assertEqual(update.status_code, 405)
+        delete = self.client.delete(f"{self.url}{self.aapl.pk}/")
+        self.assertEqual(delete.status_code, 405)
+        self.assertEqual(Stock.objects.count(), stock_count)
+        self.aapl.refresh_from_db()
+        self.assertEqual(self.aapl.company_name, "Apple Inc.")
+
+    def test_inactive_stock_detail_is_not_public(self):
+        response = self.client.get(f"{self.url}{self.inactive.pk}/")
+        self.assertEqual(response.status_code, 404)

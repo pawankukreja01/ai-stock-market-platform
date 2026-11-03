@@ -402,8 +402,8 @@
               <tr>
                 <th>Metric</th>
                 <th>{{ symbol }}</th>
-                <th>S&P 500</th>
-                <th>NASDAQ-100</th>
+                <th>{{ benchmarkMetrics.primaryName }}</th>
+                <th>{{ benchmarkMetrics.secondaryName }}</th>
                 <th>
                   {{
                     benchmarkMetrics.sectorName
@@ -704,7 +704,14 @@
         v-else-if="!latestFundamental"
         class="fundamentals-empty"
       >
-        No fundamental data available for this period.
+        No {{ fundamentalsPeriod }} fundamental statements are stored for {{ symbol }}.
+        This is missing provider coverage, not a zero financial result.
+        <button
+          v-if="fundamentalsPeriod === 'quarterly'"
+          type="button"
+          class="fundamentals-show-annual"
+          @click="changeFundamentalsPeriod('annual')"
+        >View annual data</button>
       </div>
 
       <template v-else>
@@ -1120,6 +1127,14 @@
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          class="ml-generate-button"
+          :disabled="mlLoading"
+          @click="loadMLPrediction"
+        >
+          {{ mlLoading ? "Generating…" : "Generate prediction" }}
+        </button>
       </div>
 
       <div
@@ -1140,7 +1155,9 @@
         v-else-if="!mlPrediction"
         class="ml-prediction-empty"
       >
-        No ML prediction is currently available.
+        Select a model and horizon, then click <strong>Generate prediction</strong>.
+        Forecasts are experimental and trained only when requested to avoid
+        repeated backend training and request limits.
       </div>
 
       <template v-else>
@@ -1150,9 +1167,40 @@
           {{ formatMLDate(mlPrediction.historical_period?.end_date) }}.
         </div>
 
+        <div
+          v-if="mlPrediction.evidence"
+          class="ml-evidence-box"
+          :class="mlPrediction.evidence.status === 'limited_evidence' ? 'ml-evidence-warning' : 'ml-evidence-preliminary'"
+          role="status"
+        >
+          <strong>
+            {{ mlPrediction.evidence.status === "limited_evidence"
+              ? "Limited forecasting evidence"
+              : "Promising single-period holdout — not live-trading ready" }}
+          </strong>
+          <p>
+            Model held-out error: {{ formatMLPercentage(mlPrediction.evidence.model_mae) }}.
+            Zero-return baseline: {{ formatMLPercentage(mlPrediction.evidence.baselines?.zero_return?.mae) }}.
+            Historical-mean baseline: {{ formatMLPercentage(mlPrediction.evidence.baselines?.training_mean_return?.mae) }}.
+          </p>
+          <p>
+            Latest stored price: {{ formatMLDate(mlPrediction.evidence.latest_price_date) }}
+            ({{ mlPrediction.evidence.price_age_days }} calendar days old).
+            Approximate non-overlapping holdout windows:
+            {{ mlPrediction.evidence.approx_non_overlapping_holdout_windows }}.
+          </p>
+          <ul v-if="mlPrediction.evidence.warnings?.length">
+            <li v-for="warning in mlPrediction.evidence.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+          <p>
+            Predictions are experimental estimates, not probabilities of profit.
+            Passing this diagnostic is not proof of a profitable investment strategy.
+          </p>
+        </div>
+
         <div class="ml-prediction-main-grid">
           <div class="ml-prediction-primary-card">
-            <span class="ml-card-label">Expected Future Return</span>
+            <span class="ml-card-label">Experimental Future Return Estimate</span>
             <strong
               class="ml-primary-value"
               :class="returnValueClass(mlPredictionReturnPercentage)"
@@ -1182,14 +1230,14 @@
               {{ formatMLPrice(mlPrediction.prediction?.current_price) }}
             </strong>
             <span class="ml-card-help">
-              Latest stored closing price used to convert the return estimate into an illustrative price estimate.
+              Latest stored closing price, shown for context. The forecast assumes execution at the next session close, whose price is not yet known.
             </span>
           </div>
         </div>
 
         <div class="ml-prediction-grid">
           <div class="ml-prediction-item">
-            <span>Illustrative Price Estimate</span>
+            <span>Future Price Estimate (not supported)</span>
             <strong>{{ formatMLPrice(mlPrediction.prediction?.estimated_price) }}</strong>
           </div>
 
@@ -3993,7 +4041,8 @@ const loadBenchmarkData = async (
       await getBenchmarkComparison(
         startDate,
         endDate,
-        ""
+        "",
+        props.symbol.endsWith(".L") ? "LSE" : "NASDAQ"
       );
 
     if (
@@ -4079,9 +4128,11 @@ const loadBenchmarkData = async (
 
       sp500:
         sp500Metrics,
+      primaryName: sp500.name || "Primary benchmark",
 
       nasdaq100:
         nasdaqMetrics,
+      secondaryName: nasdaq100.name || "Secondary benchmark",
 
       sector:
         sectorMetrics,
@@ -4220,7 +4271,7 @@ const renderBenchmarkChart = async () => {
       y: sp500.values,
       type: "scatter",
       mode: "lines",
-      name: "S&P 500",
+      name: benchmarkMetrics.value.primaryName,
 
       line: {
         width: 2,
@@ -4228,7 +4279,7 @@ const renderBenchmarkChart = async () => {
       },
 
       hovertemplate:
-        "<b>S&P 500</b><br>" +
+        `<b>${benchmarkMetrics.value.primaryName}</b><br>` +
         "$10,000 Growth: $%{y:,.2f}" +
         "<extra></extra>",
     });
@@ -4242,7 +4293,7 @@ const renderBenchmarkChart = async () => {
       y: nasdaq100.values,
       type: "scatter",
       mode: "lines",
-      name: "NASDAQ-100",
+      name: benchmarkMetrics.value.secondaryName,
 
       line: {
         width: 2,
@@ -4250,7 +4301,7 @@ const renderBenchmarkChart = async () => {
       },
 
       hovertemplate:
-        "<b>NASDAQ-100</b><br>" +
+        `<b>${benchmarkMetrics.value.secondaryName}</b><br>` +
         "$10,000 Growth: $%{y:,.2f}" +
         "<extra></extra>",
     });
@@ -4647,7 +4698,8 @@ const formatFundamentalCurrency = (value) => {
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
-  return `$${number.toLocaleString("en-US", {
+  const currency = props.symbol.toUpperCase().endsWith(".L") ? "GBP" : "USD";
+  return `${currency} ${number.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -4936,13 +4988,13 @@ const renderRiskReturnChart = () => {
 
   if (benchmarkMetrics.value) {
     addPoint(
-      "S&P 500",
+      benchmarkMetrics.value.primaryName || "Market benchmark",
       benchmarkMetrics.value.sp500?.annualizedReturn,
       benchmarkMetrics.value.sp500?.annualizedVolatility
     );
 
     addPoint(
-      "NASDAQ-100",
+      benchmarkMetrics.value.secondaryName || "Secondary benchmark",
       benchmarkMetrics.value.nasdaq100?.annualizedReturn,
       benchmarkMetrics.value.nasdaq100?.annualizedVolatility
     );
@@ -5546,6 +5598,46 @@ const renderBacktestChart = (result) => {
   );
 };
 
+const formatResearchRequestError = (err, fallback, { minObservations = 0 } = {}) => {
+  // DRF throttling and authentication often return "detail", not "error".
+  const data = err?.response?.data || {};
+  const status = err?.response?.status;
+  const message = typeof data.error === "string" ? data.error
+    : typeof data.detail === "string" ? data.detail
+    : "";
+
+  if (status === 429) {
+    const wait = Number(data.wait);
+    return Number.isFinite(wait) && wait > 0
+      ? `Request limit reached. Retry after about ${Math.ceil(wait)} seconds. Forecasts are generated only when requested.`
+      : "Request limit reached. Wait before retrying and avoid rapidly switching models.";
+  }
+  if (status === 401 || status === 403) {
+    return "Your session is not authorized for this research request. Please sign in again.";
+  }
+  if (status === 400) {
+    const count = Number(data.observations);
+    const countText = Number.isFinite(count) && count >= 0 ? ` (${count} currently stored)` : "";
+    if (minObservations && /historical observations/i.test(message)) {
+      return `This stock needs at least ${minObservations} historical observations for this analysis${countText}. Try another stock or update its historical data in the restored test database.`;
+    }
+    return message || "The selected stock does not have enough usable data for this analysis.";
+  }
+  if (status === 404) {
+    return message || "This stock was not found in the backend.";
+  }
+  if (status === 503) {
+    return message || "The required market-data service is currently unavailable.";
+  }
+  if (status >= 500) {
+    return `${fallback} The server returned an error. Check the Django terminal for diagnostic details.`;
+  }
+  if (!err?.response) {
+    return "Unable to connect to the Django API. Confirm that the backend is running and try again.";
+  }
+  return message || (err?.message === "Invalid ML prediction response." ? err.message : fallback);
+};
+
 const loadBacktest = async () => {
   try {
     backtestLoading.value = true;
@@ -5582,9 +5674,11 @@ const loadBacktest = async () => {
     );
 
     backtestResult.value = null;
-    backtestError.value =
-      err?.response?.data?.error ||
-      "Unable to run strategy backtest.";
+    backtestError.value = formatResearchRequestError(
+      err,
+      "Unable to run strategy backtest.",
+      { minObservations: 1200 }
+    );
   } finally {
     backtestLoading.value = false;
   }
@@ -5621,9 +5715,11 @@ const loadMLPrediction = async () => {
     );
 
     mlPrediction.value = null;
-    mlError.value =
-      err?.response?.data?.error ||
-      "Unable to generate ML return prediction.";
+    mlError.value = formatResearchRequestError(
+      err,
+      "Unable to generate ML return prediction.",
+      { minObservations: 300 }
+    );
   } finally {
     mlLoading.value = false;
   }
@@ -5637,7 +5733,8 @@ const changeMLModel = (model) => {
   mlModel.value = model;
   backtestResult.value = null;
   backtestError.value = "";
-  loadMLPrediction();
+  mlPrediction.value = null;
+  mlError.value = "";
 };
 
 const changeMLHorizon = (horizon) => {
@@ -5648,7 +5745,8 @@ const changeMLHorizon = (horizon) => {
   mlHorizon.value = horizon;
   backtestResult.value = null;
   backtestError.value = "";
-  loadMLPrediction();
+  mlPrediction.value = null;
+  mlError.value = "";
 };
 
 const loadPrices = async (includeML = false) => {
@@ -5769,9 +5867,8 @@ const loadPrices = async (includeML = false) => {
       );
     }
 
-    if (includeML) {
-      await loadMLPrediction();
-    }
+    // Don't automatically train ML models whenever a stock changes.
+    // The user can explicitly generate a forecast from the ML panel.
   } catch (err) {
     console.error(
       "Failed to load historical prices:",
@@ -7488,6 +7585,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.ml-evidence-box {
+  margin: 16px 0;
+  padding: 14px 17px;
+  border: 1px solid #b9c9ec;
+  border-radius: 12px;
+  background: #f7faff;
+  color: #1e365a;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ml-evidence-warning { border-color: #f1c29b; background: #fff9f0; color: #734818; }
+.ml-evidence-box p { margin: 8px 0 0; }
+.ml-evidence-box ul { margin: 9px 0 0; padding-left: 20px; }
+
 .chart-card {
   margin-top: 30px;
   background: white;
@@ -8705,4 +8816,34 @@ onBeforeUnmount(() => {
   }
 }
 
+.ml-generate-button {
+  min-height: 40px;
+  border-radius: 9px;
+  border: 1px solid var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 9px 15px;
+  cursor: pointer;
+}
+.ml-generate-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+.ml-generate-button:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 25%);
+  outline-offset: 2px;
+}
+ .fundamentals-show-annual {
+  display: inline-block;
+  margin-left: 8px;
+  border: 1px solid var(--border-strong, #d1d5db);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  color: var(--text-primary, #17263d);
+  cursor: pointer;
+  font-size: 12px;
+}
 </style>

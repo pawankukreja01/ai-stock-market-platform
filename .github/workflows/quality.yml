@@ -1,0 +1,83 @@
+name: MarketPulse quality gates
+
+# Only the newest commit in an active PR needs a full dependency-heavy run.
+concurrency:
+  group: marketpulse-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Django tests and migration checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: marketpulse
+          POSTGRES_PASSWORD: marketpulse-ci-only
+          POSTGRES_DB: ai_stock_market
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U marketpulse -d ai_stock_market"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: "ci-ephemeral-not-for-production-please-replace"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+      DB_NAME: ai_stock_market
+      DB_USER: marketpulse
+      DB_PASSWORD: marketpulse-ci-only
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Django system checks
+        run: python manage.py check
+      - name: Ensure migration files match models
+        run: python manage.py makemigrations --check --dry-run
+      - name: Run Django tests
+        run: python manage.py test
+
+  frontend:
+    name: Vue production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run frontend logic tests
+        run: npm test
+      - name: Build production assets
+        run: npm run build

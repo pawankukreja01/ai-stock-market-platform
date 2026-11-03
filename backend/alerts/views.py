@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 
 from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -11,10 +12,14 @@ from .serializers import AlertRuleSerializer, AlertEventSerializer
 class AlertRuleListCreateView(generics.ListCreateAPIView):
     """List alert rules or create a rule."""
 
+    permission_classes = [IsAuthenticated]
     serializer_class = AlertRuleSerializer
 
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
     def get_queryset(self):
-        queryset = AlertRule.objects.select_related("stock")
+        queryset = AlertRule.objects.filter(owner=self.request.user).select_related("stock")
 
         symbol = self.request.query_params.get("symbol", "").strip()
         alert_type = self.request.query_params.get(
@@ -42,15 +47,19 @@ class AlertRuleListCreateView(generics.ListCreateAPIView):
 class AlertRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Retrieve, edit, or delete an alert rule."""
 
-    queryset = AlertRule.objects.select_related("stock")
+    permission_classes = [IsAuthenticated]
     serializer_class = AlertRuleSerializer
+
+    def get_queryset(self):
+        return AlertRule.objects.filter(owner=self.request.user).select_related("stock")
 
 
 class AlertEventListView(APIView):
     """List triggered alert events."""
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = AlertEvent.objects.select_related(
+        queryset = AlertEvent.objects.filter(rule__owner=request.user).select_related(
             "rule",
             "rule__stock",
         )
@@ -101,10 +110,11 @@ class AlertEventListView(APIView):
 
 class AlertEventMarkReadView(APIView):
     """Mark one alert event as read or unread."""
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
         event = get_object_or_404(
-            AlertEvent.objects.select_related(
+            AlertEvent.objects.filter(rule__owner=request.user).select_related(
                 "rule",
                 "rule__stock",
             ),

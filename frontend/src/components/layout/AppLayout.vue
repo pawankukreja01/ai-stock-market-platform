@@ -51,6 +51,13 @@
         </router-link>
 
         <router-link
+          to="/research-health"
+          exact-active-class="router-link-exact-active"
+        >
+          Research Health
+        </router-link>
+
+        <router-link
           to="/screener"
           exact-active-class="router-link-exact-active"
         >
@@ -1216,6 +1223,61 @@ onBeforeUnmount(() => {
   .logout-button {
     transition: none;
   }
+}
+
+
+/* Small-screen release fix: reclaim the space occupied by the desktop sidebar.
+   Navigation remains keyboard accessible and horizontally scrollable. */
+@media (max-width: 820px) {
+  .app-layout { display: block; }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    left: auto;
+    bottom: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 12px;
+    width: 100%;
+    height: auto;
+    min-height: 70px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    box-shadow: 0 5px 16px rgba(15,23,42,.12);
+  }
+  .brand.brand-link { flex: 0 0 auto; min-height: 40px; margin: 0; padding: 0; }
+  .brand-mark { width: 38px; height: 38px; flex-basis: 38px; }
+  .brand-copy small { display: none; }
+  .navigation-label { display: none; }
+  .navigation {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 1 0 auto;
+    width: auto;
+    gap: 4px;
+  }
+  .navigation a { flex: 0 0 auto; min-height: 38px; white-space: nowrap; padding: 9px 11px; font-size: 13px; }
+  .logout-button {
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+    padding: 9px 11px;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .main-area { width: 100%; margin-left: 0; min-width: 0; }
+  .topbar { min-height: 64px; padding: 12px 18px; }
+  .content { padding: 18px; }
+}
+@media (max-width: 480px) {
+  .brand-copy strong { display: none; }
+  .sidebar { gap: 8px; padding: 8px 10px; }
+  .topbar { gap: 8px; flex-wrap: wrap; padding: 12px; }
+  .content { padding: 12px; }
 }
 
 </style>
