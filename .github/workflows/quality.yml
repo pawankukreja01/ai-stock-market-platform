@@ -1,5 +1,10 @@
 name: MarketPulse quality gates
 
+# Only the newest commit in an active PR needs a full dependency-heavy run.
+concurrency:
+  group: marketpulse-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
