@@ -14,6 +14,7 @@ from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
+from django.views.decorators.csrf import csrf_protect
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
@@ -25,11 +26,16 @@ from .email_utils import (
     send_password_reset_email,
     send_verification_email,
 )
+from .session_security import start_user_session
 from .models import UserProfile
 from .serializers import RegistrationSerializer
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+class LoginRateThrottle(AnonRateThrottle):
+    scope = "auth_login"
 
 
 class VerificationRateThrottle(AnonRateThrottle):
@@ -104,8 +110,10 @@ def register(request):
     )
 
 
+@csrf_protect
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
 def login_view(request):
     email = str(request.data.get("email", "")).strip()
     password = request.data.get("password", "")
@@ -145,6 +153,7 @@ def login_view(request):
         )
 
     django_login(request._request, user)
+    start_user_session(request._request)
 
     return Response(
         {
