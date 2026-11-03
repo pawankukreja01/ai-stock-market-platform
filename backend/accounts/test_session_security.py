@@ -141,3 +141,55 @@ class VerifiedLoginSessionTests(TestCase):
         with patch("accounts.session_security.now_timestamp", return_value=created + 43201):
             denied = self.client.get(reverse("auth-current-user"))
             self.assertIn(denied.status_code, (401, 403))
+
+    def test_anonymous_logout_still_requires_csrf(self):
+        response = Client(enforce_csrf_checks=True).post(
+            reverse("auth-logout"), {}, content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_registration_cannot_be_forced_cross_site_without_csrf(self):
+        response = Client(enforce_csrf_checks=True).post(
+            reverse("auth-register"),
+            {"name": "Unwanted Account", "email": "csrf@example.com",
+             "password": "StrongPassword!123", "password_confirm": "StrongPassword!123"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            get_user_model().objects.filter(email="csrf@example.com").exists()
+        )
+
+    def test_forwarded_ip_spoofing_cannot_bypass_login_throttle(self):
+        with override_settings(REST_FRAMEWORK={
+            "NUM_PROXIES": 0,
+            "DEFAULT_THROTTLE_CLASSES": [],
+            "DEFAULT_THROTTLE_RATES": {"auth_login": "2/hour"},
+        }):
+            cache.clear()
+            responses = [
+                self.client.post(
+                    reverse("auth-login"),
+                    {"email": self.email, "password": "incorrect"},
+                    content_type="application/json",
+                    HTTP_X_CSRFTOKEN=self.csrf,
+                    HTTP_X_FORWARDED_FOR=f"198.51.100.{i}",
+                    REMOTE_ADDR="127.0.0.1",
+                )
+                for i in (10, 11, 12)
+            ]
+        self.assertEqual([r.status_code for r in responses], [400, 400, 429])
+
+    def test_bad_email_and_password_have_same_public_error(self):
+        absent = self.client.post(
+            reverse("auth-login"),
+            {"email": "absent@example.com", "password": "incorrect"},
+            content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf,
+        )
+        known = self.client.post(
+            reverse("auth-login"),
+            {"email": self.email, "password": "incorrect"},
+            content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf,
+        )
+        self.assertEqual(absent.status_code, known.status_code)
+        self.assertEqual(absent.json()["detail"], known.json()["detail"])
