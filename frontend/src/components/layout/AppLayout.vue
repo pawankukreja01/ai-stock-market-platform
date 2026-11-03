@@ -277,7 +277,9 @@ async function handleStayLoggedIn() {
   }
 }
 
-function handleUserActivity() {
+function handleUserActivity(event) {
+  // Synthetic/programmatic DOM events cannot claim human activity.
+  if (!event?.isTrusted) return;
   if (logoutInProgress.value || checkingSession.value || heartbeatInFlight || closed) return;
   if (document.visibilityState === "hidden" || showInactivityWarning.value) return;
   const now = Date.now();
