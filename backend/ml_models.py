@@ -3,7 +3,7 @@ import math
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
@@ -353,6 +353,47 @@ def create_random_forest_model():
                     n_jobs=-1,
                 ),
             ),
+        ]
+    )
+
+
+
+def create_conservative_random_forest_model():
+    """Research-only shallower forest with broader, more stable leaves.
+
+    Not exposed through the live prediction API. Its fixed configuration
+    is compared against baselines on time-purged development folds.
+    """
+    return Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median")),
+            (
+                "model",
+                RandomForestRegressor(
+                    n_estimators=200,
+                    max_depth=3,
+                    min_samples_leaf=25,
+                    max_features="sqrt",
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+
+
+def create_zero_anchor_ridge_model():
+    """Research-only regularized linear forecast with a zero-return anchor.
+
+    The feature scaler is fitted strictly on training data. Disabling
+    the intercept shrinks predictions toward zero, not toward the
+    historically bullish sample average. Alpha is fixed in advance.
+    """
+    return Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+            ("model", Ridge(alpha=100.0, fit_intercept=False)),
         ]
     )
 
