@@ -15,7 +15,13 @@ from .serializers import (
     FundamentalSerializer,
 )
 
-from .risk_engine import calculate_risk_metrics, fetch_benchmark_prices
+from .risk_engine import calculate_risk_metrics
+from .benchmark_data import (
+    BENCHMARK_TICKERS,
+    fetch_benchmark_prices as fetch_cached_benchmark_prices,
+)
+from stocks.catalog import market_for_exchange
+from stocks.models import Stock
 
 
 class HistoricalPriceListView(generics.ListAPIView):
@@ -404,22 +410,31 @@ class RiskMetricsView(APIView):
         actual_start_date = stock_dates[0]
         actual_end_date = stock_dates[-1]
 
-        benchmark_symbol = "^GSPC"
+        # Map each stock to a *same-market* risk benchmark. Never
+        # silently compute UK-stock beta against the US S&P 500.
+        market = market_for_exchange(stock.stock.exchange)
+        benchmark_symbol = BENCHMARK_TICKERS.get(market)
+        benchmark_prices = None
+        benchmark_status = "unsupported_market" if not benchmark_symbol else "unavailable"
 
-        try:
-            benchmark_prices = fetch_benchmark_prices(
-                benchmark_symbol=benchmark_symbol,
-                start_date=actual_start_date.isoformat(),
-                end_date=(
-                    actual_end_date + timedelta(days=1)
-                ).isoformat(),
-            )
+        if benchmark_symbol:
+            try:
+                benchmark_series = fetch_cached_benchmark_prices(
+                    pd.DataFrame(price_records),
+                    exchange=stock.stock.exchange,
+                )
+                benchmark_status = benchmark_series.attrs.get(
+                    "status", "available" if not benchmark_series.empty else "unavailable"
+                )
+                if not benchmark_series.empty:
+                    benchmark_prices = benchmark_series
+            except Exception:
+                # Standalone stock risk figures are still meaningful, but
+                # beta/correlation must remain null without benchmark prices.
+                benchmark_status = "unavailable"
 
-            if benchmark_prices.empty:
-                benchmark_prices = None
-
-        except Exception:
-            benchmark_prices = None
+        # A benchmark label indicates intended comparison, not proof of
+        # actual coverage. Consumers must also inspect benchmark_status.
 
         try:
             risk_metrics = calculate_risk_metrics(
@@ -445,9 +460,8 @@ class RiskMetricsView(APIView):
                 "company_name": stock.stock.company_name,
                 "start_date": actual_start_date,
                 "end_date": actual_end_date,
-                "benchmark": risk_metrics.get(
-                    "benchmark"
-                ),
+                "benchmark": risk_metrics.get("benchmark"),
+                "benchmark_status": benchmark_status,
                 "risk_metrics": risk_metrics,
             }
         )    
