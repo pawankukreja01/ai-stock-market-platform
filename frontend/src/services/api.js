@@ -84,9 +84,9 @@ export const getHistoricalPrices = async (stockId, startDate, endDate) => {
 };
 
 // BENCHMARK COMPARISON
-export const getBenchmarkComparison = async (startDate, endDate, sector = "") => {
+export const getBenchmarkComparison = async (startDate, endDate, sector = "", exchange = "") => {
   const response = await api.get("/benchmark-comparison/", {
-    params: { start_date: startDate, end_date: endDate, sector },
+    params: { start_date: startDate, end_date: endDate, sector, exchange },
   });
   return response.data;
 };
