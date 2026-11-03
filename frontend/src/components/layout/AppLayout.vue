@@ -51,6 +51,13 @@
         </router-link>
 
         <router-link
+          to="/forecast-performance"
+          exact-active-class="router-link-exact-active"
+        >
+          Forecast Performance
+        </router-link>
+
+        <router-link
           to="/research-health"
           exact-active-class="router-link-exact-active"
         >
