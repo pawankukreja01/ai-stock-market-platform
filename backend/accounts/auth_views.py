@@ -14,7 +14,6 @@ from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
-from django.views.decorators.csrf import csrf_protect
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
@@ -26,6 +25,7 @@ from .email_utils import (
     send_password_reset_email,
     send_verification_email,
 )
+from .csrf_security import require_csrf_for_api
 from .session_security import start_user_session
 from .models import UserProfile
 from .serializers import RegistrationSerializer
@@ -118,7 +118,7 @@ def register(request):
     )
 
 
-@csrf_protect
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([LoginRateThrottle])
