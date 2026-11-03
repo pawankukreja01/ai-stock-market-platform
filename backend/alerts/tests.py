@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from rest_framework.test import APIClient
 
-from market_data.models import HistoricalPrice, NewsArticle
+from market_data.models import HistoricalPrice, NewsArticle, LatestQuote
 from stocks.models import Stock
 
 from .models import AlertEvent, AlertRule
@@ -229,6 +229,76 @@ class AlertAPITests(TestCase):
             AlertEvent.objects.filter(rule=rule).count(),
             2,
         )
+
+    def test_price_alert_uses_fresh_stored_quote_when_opted_in(self):
+        rule = self.create_rule(threshold="300.00")
+        LatestQuote.objects.create(
+            stock=self.stock, price=Decimal("250.00"),
+            currency="USD", quote_type="intraday_1m",
+            source_timestamp=timezone.now(),
+        )
+        self.assertEqual(
+            get_observed_value(rule, use_latest_quote=True),
+            Decimal("250.00"),
+        )
+        # Existing historical-mode behavior is retained.
+        self.assertEqual(get_observed_value(rule), Decimal("343.46"))
+
+        out = StringIO()
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=out,
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
+        self.assertFalse(AlertRule.objects.get(pk=rule.pk).condition_met)
+
+        quote = LatestQuote.objects.get(stock=self.stock)
+        quote.price = Decimal("350.00")
+        quote.save(update_fields=["price"])
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=StringIO(),
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 1)
+        self.assertIn("latest available stored quote",
+                      AlertEvent.objects.get(rule=rule).message)
+
+    def test_price_alert_skips_stale_quote_without_historical_fallback(self):
+        rule = self.create_rule(threshold="300.00")
+        LatestQuote.objects.create(
+            stock=self.stock, price=Decimal("350.00"),
+            currency="USD", quote_type="daily_close",
+            source_timestamp=timezone.now() - timezone.timedelta(days=3),
+        )
+        self.assertIsNone(
+            get_observed_value(
+                rule, use_latest_quote=True, max_quote_age_minutes=30,
+            )
+        )
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True,
+            max_quote_age_minutes=30, stdout=StringIO(),
+        )
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
+        self.assertIsNone(AlertRule.objects.get(pk=rule.pk).last_evaluated_at)
+
+    def test_price_only_mode_does_not_modify_sentiment_alerts(self):
+        rule = self.create_rule(alert_type=AlertRule.SENTIMENT_ABOVE,
+                                threshold="0.25")
+        NewsArticle.objects.create(
+            stock=self.stock, title="Strong company outlook",
+            url="https://example.com/news/strong",
+            sentiment_score=0.7,
+            sentiment_analyzed_at=timezone.now(),
+        )
+        call_command(
+            "evaluate_alerts", symbol="AAPL",
+            price_only=True, latest_prices=True, stdout=StringIO(),
+        )
+        rule.refresh_from_db()
+        self.assertIsNone(rule.last_evaluated_at)
+        self.assertEqual(AlertEvent.objects.filter(rule=rule).count(), 0)
 
     def test_sentiment_alert_uses_analyzed_news(self):
         NewsArticle.objects.create(
