@@ -657,6 +657,51 @@ For bugs, include the relevant command, full error output, and the affected feat
 
 ---
 
+## Personal-use yfinance price monitor (opt-in)
+
+The stock research page checks the **stored** quote API approximately once
+per minute while the browser tab is visible. This does not contact Yahoo
+Finance. To refresh stored quotes from yfinance, and evaluate matching price
+alerts only when the provider timestamp is recent, run the following in a
+**separate terminal** with your existing backend environment activated:
+
+```bash
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py monitor_market \\
+  --symbols AAPL MSFT NVDA --continuous --interval-seconds 300
+```
+
+- Use **Ctrl+C** to stop monitoring. Omit `--continuous` for one cycle.
+- The command is opt-in and does **not** automatically start with the Django
+  or frontend servers. It requires an explicit `DB_NAME` override and refuses
+  the protected original `ai_stock_market` database.
+- The watchlist is limited to 15 stocks per process to avoid accidental
+  large-volume polling. Each cycle has a 1-second minimum delay between
+  requests, a 60-second minimum interval and conservative error reporting.
+  If Yahoo Finance throttles requests, increase the interval or reduce the
+  watchlist. The interval starts **after** each completed cycle.
+- Quotes may be delayed or daily-close fallback data. The monitor checks the
+  **provider's source timestamp**, not the latest fetch time. Price alerts
+  are evaluated only when the source timestamp is at most 30 minutes old by
+  default; missing or stale quotes do **not** fall back to historical closing
+  prices and do **not** change the alert's condition state.
+- Triggered events use existing deduplication while the condition remains
+  met. The monitor updates **only price** alerts and does not refresh news,
+  sentiment, fundamentals, charts' daily history, or ML models.
+- For personal research only; not guaranteed exchange-real-time, and it may
+  not work outside market hours. Confirm the provider license before any
+  redistribution or commercial use.
+- This **writes** retrieved quotes and may create alert events in the
+  explicitly selected *restored test* database. It never performs a trade.
+  The historic backup and original database must remain untouched.
+
+If you prefer not to keep a separate terminal process running, you can
+schedule an equivalent single-cycle command using a local scheduler (launchd
+on macOS), but configure the same explicit database, intervals and logging,
+and do not run duplicate monitors for the same watchlist.
+
+---
+
 ## Forecast evidence and launch gates
 
 The ML prediction API at `GET /api/ml-prediction/?symbol=AAPL&horizon=5&model=random_forest`
