@@ -23,6 +23,13 @@
         </router-link>
 
         <router-link
+          to="/getting-started"
+          exact-active-class="router-link-exact-active"
+        >
+          Getting Started
+        </router-link>
+
+        <router-link
           to="/profile"
           exact-active-class="router-link-exact-active"
         >
