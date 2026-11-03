@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -12,6 +13,10 @@ from portfolios.models import Portfolio, PortfolioHolding
 class PortfolioAPITests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username="portfolio_owner", password="test-only-password"
+        )
+        self.client.force_authenticate(user=self.user)
         self.stock = Stock.objects.create(
             symbol="AAPL",
             company_name="Apple Inc.",
@@ -22,6 +27,7 @@ class PortfolioAPITests(TestCase):
             is_active=True,
         )
         self.portfolio = Portfolio.objects.create(
+            owner=self.user,
             name="Test Portfolio",
             description="Portfolio API test",
         )
@@ -231,3 +237,50 @@ class PortfolioAPITests(TestCase):
         response = self.client.get(f"/api/portfolios/{self.portfolio.id}/analysis/")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["risk"]["available"])
+
+    def test_anonymous_portfolio_api_rejected(self):
+        anonymous = APIClient()
+        self.assertIn(anonymous.get("/api/portfolios/").status_code, (401, 403))
+        self.assertIn(anonymous.get(f"/api/portfolios/{self.portfolio.pk}/").status_code, (401, 403))
+
+    def test_cross_user_portfolio_and_holding_access_denied(self):
+        other = get_user_model().objects.create_user(
+            username="other_portfolio_user", password="test-only-password"
+        )
+        foreign = Portfolio.objects.create(name="Private", owner=other)
+        holding = PortfolioHolding.objects.create(
+            portfolio=foreign, stock=self.stock,
+            quantity=Decimal("1"), purchase_price=Decimal("100.00")
+        )
+        response = self.client.get("/api/portfolios/")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(foreign.pk, [p["id"] for p in response.data])
+        self.assertEqual(self.client.get(f"/api/portfolios/{foreign.pk}/").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/portfolios/{foreign.pk}/analysis/").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/portfolios/{foreign.pk}/holdings/").status_code, 404)
+        self.assertEqual(self.client.patch(
+            f"/api/portfolios/{foreign.pk}/", {"name": "Stolen"}, format="json"
+        ).status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/portfolios/{foreign.pk}/").status_code, 404)
+        self.assertEqual(self.client.patch(
+            f"/api/portfolios/{foreign.pk}/holdings/{holding.pk}/",
+            {"quantity": "200"}, format="json"
+        ).status_code, 404)
+        self.assertTrue(Portfolio.objects.filter(pk=foreign.pk, owner=other).exists())
+        self.assertEqual(PortfolioHolding.objects.get(pk=holding.pk).quantity, Decimal("1"))
+
+    def test_new_portfolio_ignores_spoofed_owner(self):
+        other = get_user_model().objects.create_user(
+            username="other_portfolio_target", password="test-only-password"
+        )
+        r = self.client.post(
+            "/api/portfolios/", {"name": "Mine", "owner": other.pk}, format="json"
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(Portfolio.objects.get(pk=r.data["id"]).owner, self.user)
+        self.assertNotIn("owner", r.data)
+
+    def test_legacy_portfolio_preserved_and_hidden(self):
+        legacy = Portfolio.objects.create(name="Orphaned legacy portfolio")
+        self.assertEqual(self.client.get(f"/api/portfolios/{legacy.pk}/").status_code, 404)
+        self.assertTrue(Portfolio.objects.filter(pk=legacy.pk, owner__isnull=True).exists())
