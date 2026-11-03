@@ -105,6 +105,19 @@ class Command(BaseCommand):
                 changes.append((when, round(change * 100, 2)))
         return changes
 
+    @staticmethod
+    def _incoming_factor_jumps(factors, threshold=0.10):
+        """Flag large adjacent provider factor shifts before any ingestion."""
+        jumps = []
+        last = None
+        for when, factor in sorted(factors.items()):
+            if last is not None and factor > 0 and last > 0:
+                change = factor / last - 1
+                if math.isfinite(change) and abs(change) >= threshold:
+                    jumps.append((when, round(100 * change, 2)))
+            last = factor
+        return jumps
+
     @classmethod
     def _preflight_adjusted_revisions(cls, stock, data):
         """Run all revision checks before any update_or_create call."""
@@ -122,7 +135,10 @@ class Command(BaseCommand):
             adjusted = cls._parse_decimal(row["Adj Close"])[0]
             if close is not None and adjusted is not None and close > 0 and adjusted > 0:
                 incoming[when] = float(adjusted / close)
-        return cls._large_adjustment_revisions(old, incoming)
+        return (
+            cls._large_adjustment_revisions(old, incoming),
+            cls._incoming_factor_jumps(incoming),
+        )
 
     # =========================================================
     # DECIMAL AND PRICE NORMALIZATION
@@ -494,8 +510,8 @@ class Command(BaseCommand):
         # Protect existing records before any stock metadata or price write.
         # Large revisions may be provider corrections or false positives.
         try:
-            adjustment_revisions = self._preflight_adjusted_revisions(
-                stock, data
+            adjustment_revisions, incoming_jumps = (
+                self._preflight_adjusted_revisions(stock, data)
             )
         except (ValueError, TypeError, InvalidOperation, OverflowError) as exc:
             raise CommandError(
@@ -518,6 +534,24 @@ class Command(BaseCommand):
                     "Historical adjustment revisions require review. "
                     "Run --dry-run first. To apply intentionally, pass "
                     "--allow-adjustment-revisions; no records were changed."
+                )
+
+        if incoming_jumps:
+            preview = ", ".join(
+                f"{when} ({difference:+.2f}%)"
+                for when, difference in incoming_jumps[:5]
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    f"CAUTION: {len(incoming_jumps)} large jumps in "
+                    "incoming adjusted/close ratios: " + preview
+                )
+            )
+            if not dry_run and not allow_adjustment_revisions:
+                raise CommandError(
+                    "Incoming provider history has large adjustment-factor "
+                    "discontinuities. Run --dry-run and investigate first; "
+                    "no records were changed."
                 )
 
         if dry_run:
