@@ -17,6 +17,9 @@ from django.utils import timezone
 from stocks.models import Stock
 from market_data.models import HistoricalPrice
 from ml_engine import prepare_training_dataset
+from market_data.benchmark_data import (
+    load_cached_benchmark_prices, BenchmarkDataUnavailable,
+)
 from ml_models import (
     create_linear_regression_model,
     create_random_forest_model,
@@ -79,6 +82,16 @@ class Command(BaseCommand):
         )
         parser.add_argument("--model", choices=tuple(MODEL_FACTORIES),
                             default="random_forest")
+        parser.add_argument(
+            "--feature-set", choices=("price_volume", "market_aligned"),
+            default="price_volume",
+            help=(
+                "price_volume preserves comparable earlier experiments. "
+                "market_aligned uses the same market-relative features as "
+                "the live API when the complete local FTSE/S&P cache exists; "
+                "no Yahoo downloads or silent feature fallback."
+            ),
+        )
         parser.add_argument("--min-train", type=int, default=500)
         parser.add_argument("--test-size", type=int, default=100)
         parser.add_argument("--output", type=str,
@@ -141,8 +154,14 @@ class Command(BaseCommand):
             "min_train": min_train,
             "test_size": test_size,
             "benchmark_features": (
-                "Not included; this standalone diagnostic compares "
-                "price/volume-only features across assets."
+                "Mandatory same-market cached benchmark; no provider downloads or fallback."
+                if opts["feature_set"] == "market_aligned"
+                else "Not included; price/volume-only features for comparable earlier experiments."
+            ),
+            "feature_set": opts["feature_set"],
+            "benchmark_data_mode": (
+                "local_cache_only" if opts["feature_set"] == "market_aligned"
+                else "not_used"
             ),
             "stocks": [],
         }
@@ -164,9 +183,31 @@ class Command(BaseCommand):
             try:
                 if len(rows) < min_train + test_size + horizon + 2:
                     raise ValueError("Insufficient stored price history")
+                price_df = pd.DataFrame(rows)
+                benchmark_series = None
+                if opts["feature_set"] == "market_aligned":
+                    benchmark_series = load_cached_benchmark_prices(
+                        price_df, stock.exchange
+                    )
+
                 X, y = prepare_training_dataset(
-                    pd.DataFrame(rows), horizon=horizon,
+                    price_df, benchmark_prices=benchmark_series,
+                    horizon=horizon,
                 )
+                if opts["feature_set"] == "market_aligned":
+                    # A silent benchmark-feature omission would make results
+                    # incomparable to the market-aware live API. Fail closed.
+                    expected = {
+                        "benchmark_return_1d", "benchmark_return_20d",
+                        "relative_return_1d", "relative_return_5d",
+                        "relative_return_20d", "relative_return_60d",
+                    }
+                    if not expected.issubset(X.columns):
+                        raise ValueError(
+                            "Incomplete cached benchmark feature coverage."
+                        )
+                    item["benchmark_ticker"] = benchmark_series.attrs.get("ticker")
+                    item["feature_count"] = len(X.columns)
                 folds = generate_walk_forward_splits(
                     X, y, minimum_train_size=min_train, test_size=test_size,
                     horizon=horizon, step_size=test_size,
@@ -212,7 +253,7 @@ class Command(BaseCommand):
                 if direction_bias["warning"]:
                     self.stdout.write(f"  CAUTION: {direction_bias['warning']}")
 
-            except (ValueError, TypeError, ArithmeticError) as exc:
+            except (BenchmarkDataUnavailable, ValueError, TypeError, ArithmeticError) as exc:
                 item.update({"status": "insufficient_or_invalid_data", "reason": str(exc)})
                 self.stderr.write(f"{stock.symbol}: skipped ({exc})")
             report["stocks"].append(item)
