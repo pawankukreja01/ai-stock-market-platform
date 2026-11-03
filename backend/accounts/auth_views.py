@@ -18,18 +18,36 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, SimpleRateThrottle
 
 from .email_utils import (
     EMAIL_VERIFICATION_SALT,
     send_password_reset_email,
     send_verification_email,
 )
+from .csrf_security import require_csrf_for_api
+from .session_security import start_user_session
 from .models import UserProfile
 from .serializers import RegistrationSerializer
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+class LoginRateThrottle(SimpleRateThrottle):
+    """Throttle login attempts per remote IP even for already-logged-in users."""
+
+    scope = "auth_login"
+
+    def get_cache_key(self, request, view):
+        # Never trust an arbitrary HTTP_X_FORWARDED_FOR value supplied by
+        # the requester. A trusted edge proxy must handle client identity
+        # separately, before enabling this in public production.
+        remote_address = request.META.get("REMOTE_ADDR", "unknown")
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": remote_address,
+        }
 
 
 class VerificationRateThrottle(AnonRateThrottle):
@@ -45,6 +63,7 @@ def _verification_is_required():
     return not (settings.DEBUG and not settings.EMAIL_VERIFICATION_REQUIRED)
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
@@ -104,8 +123,10 @@ def register(request):
     )
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
 def login_view(request):
     email = str(request.data.get("email", "")).strip()
     password = request.data.get("password", "")
@@ -116,7 +137,17 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    if len(email) > 254 or len(password) > 1024:
+        return Response(
+            {"detail": "Invalid email address or password."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        # Avoid leaking the existence of an account through the difference
+        # between a fast missing-user lookup and a slow password hash check.
+        User().set_password(password)
     if user is None or not user.is_active or not user.check_password(password):
         return Response(
             {"detail": "Invalid email address or password."},
@@ -145,8 +176,9 @@ def login_view(request):
         )
 
     django_login(request._request, user)
+    start_user_session(request._request)
 
-    return Response(
+    response = Response(
         {
             "message": "Login successful.",
             "user": {
@@ -159,8 +191,11 @@ def login_view(request):
         },
         status=status.HTTP_200_OK,
     )
+    response["Cache-Control"] = "no-store"
+    return response
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([VerificationRateThrottle])
@@ -208,6 +243,7 @@ def verify_email(request):
     return Response({"message": "Your email has been verified. You can now log in."})
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([VerificationRateThrottle])
@@ -243,6 +279,7 @@ def resend_verification_email(request):
 
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetRateThrottle])
@@ -285,6 +322,7 @@ def request_password_reset(request):
 
 
 
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetRateThrottle])

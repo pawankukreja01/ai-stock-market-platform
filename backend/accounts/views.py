@@ -31,6 +31,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
+from .session_security import (extend_user_activity, session_status)
+from .csrf_security import require_csrf_for_api
 from .email_utils import (
     EMAIL_VERIFICATION_SALT,
     send_verification_email,
@@ -213,11 +215,24 @@ def login_view(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
-    return Response(
-        {
-            "user": UserSerializer(request.user).data,
-        }
-    )
+    response = Response({
+        "user": UserSerializer(request.user).data,
+        "session": session_status(request._request),
+    })
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_csrf_for_api
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirm_user_activity(request):
+    """Only explicit, CSRF-protected user activity extends the session."""
+    if not extend_user_activity(request._request):
+        return Response({"detail": "Session expired."}, status=401)
+    response = Response({"session": session_status(request._request)})
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 # --------------------------------------------------
@@ -448,14 +463,17 @@ def upload_profile_picture(request):
 # Logout
 # --------------------------------------------------
 
+@require_csrf_for_api
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def logout_view(request):
-    logout(request)
-
-    return Response(
-        {"message": "Logged out successfully."}
-    )
+    # Logout must work even when the session already expired or the user is
+    # anonymous. Otherwise the UI can appear logged out while a cookie
+    # remains valid. Django flushes the session and expires the cookie.
+    logout(request._request)
+    response = Response({"message": "Logged out successfully."})
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 # --------------------------------------------------

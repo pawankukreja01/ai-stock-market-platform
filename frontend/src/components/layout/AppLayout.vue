@@ -119,6 +119,13 @@
       </main>
     </div>
 
+    <div v-if="logoutInProgress" class="session-overlay" role="status" aria-live="polite">
+      <section class="session-modal">
+        <h2>Securing your session</h2>
+        <p>Signing out and checking that your account is no longer accessible.</p>
+      </section>
+    </div>
+
     <!-- Inactivity warning modal -->
     <div
       v-if="showInactivityWarning"
@@ -180,420 +187,189 @@
 </template>
 
 <script setup>
-import {
-  computed,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-} from "vue";
-
+import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { useRouter } from "vue-router";
-
+import { confirmSessionActivity, getAlertEvents, getCurrentUser } from "../../services/api";
+import { confirmServerLogout } from "../../utils/logoutFlow.js";
 import {
-  getAlertEvents,
-  getCurrentUser,
-  logoutUser,
-} from "../../services/api";
+  logoutPending, markLogoutPending, recordSessionExpiry, savedSessionExpiry,
+  sessionIsPastDeadline, PENDING_LOGOUT_KEY, SESSION_EXPIRY_KEY,
+} from "../../utils/sessionSafety.js";
 
 const router = useRouter();
-
-/*
-|--------------------------------------------------------------------------
-| Session configuration
-|--------------------------------------------------------------------------
-*/
-
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
-const WARNING_BEFORE_LOGOUT = 5 * 60 * 1000;
-const HEARTBEAT_INTERVAL = 5 * 60 * 1000;
-const ACTIVE_WINDOW = 5 * 60 * 1000;
-
-/*
-|--------------------------------------------------------------------------
-| Reactive state
-|--------------------------------------------------------------------------
-*/
-
+const WARNING_SECONDS = 5 * 60;
+const HEARTBEAT_MIN_GAP = 60 * 1000;
 const unreadAlertCount = ref(0);
-
 const showInactivityWarning = ref(false);
 const checkingSession = ref(false);
 const logoutInProgress = ref(false);
-
 const sessionError = ref("");
 const remainingSeconds = ref(0);
+const countdownMinutes = computed(() => String(Math.floor(remainingSeconds.value / 60)).padStart(2, "0"));
+const countdownSeconds = computed(() => String(remainingSeconds.value % 60).padStart(2, "0"));
 
-/*
-|--------------------------------------------------------------------------
-| Timer references
-|--------------------------------------------------------------------------
-*/
+let deadline = savedSessionExpiry();
+let lastActivityCallAt = 0;
+let lastUserInteractionAt = 0;
+let heartbeatInFlight = false;
+let closed = false;
+let timerId = null;
+let alertIntervalId = null;
 
-let refreshIntervalId = null;
-let heartbeatIntervalId = null;
-
-let warningTimeoutId = null;
-let countdownIntervalId = null;
-let logoutTimeoutId = null;
-
-/*
-|--------------------------------------------------------------------------
-| Activity tracking
-|--------------------------------------------------------------------------
-*/
-
-let lastActivityAt = Date.now();
-let lastTrackedActivityAt = 0;
-
-let requestInProgress = false;
-
-/*
-|--------------------------------------------------------------------------
-| Countdown formatting
-|--------------------------------------------------------------------------
-*/
-
-const countdownMinutes = computed(() =>
-  String(
-    Math.floor(remainingSeconds.value / 60)
-  ).padStart(2, "0")
-);
-
-const countdownSeconds = computed(() =>
-  String(
-    remainingSeconds.value % 60
-  ).padStart(2, "0")
-);
-
-/*
-|--------------------------------------------------------------------------
-| Check recent user activity
-|--------------------------------------------------------------------------
-*/
-
-function isRecentlyActive() {
-  return Date.now() - lastActivityAt < ACTIVE_WINDOW;
+function acceptDeadline(iso) {
+  const newDeadline = recordSessionExpiry(iso);
+  if (!newDeadline) return false;
+  deadline = newDeadline;
+  updateCountdown();
+  return true;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Refresh unread alerts
-|--------------------------------------------------------------------------
-*/
-
-async function refreshUnreadAlertCount() {
-  if (
-    requestInProgress ||
-    !isRecentlyActive() ||
-    logoutInProgress.value
-  ) {
+function updateCountdown() {
+  if (logoutInProgress.value || closed) return;
+  // Don't treat tab reloading, visibility changes, page rendering, or
+  // passive API responses as user activity.
+  if (logoutPending()) {
+    markLogoutPending();
+    void router.replace("/login");
     return;
   }
+  if (!deadline) {
+    void forceLogout();
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+  remainingSeconds.value = seconds;
+  showInactivityWarning.value = seconds > 0 && seconds <= WARNING_SECONDS;
+  if (seconds <= 0) void forceLogout();
+}
 
-  requestInProgress = true;
-
+async function forceLogout() {
+  if (logoutInProgress.value) return;
+  logoutInProgress.value = true;
+  markLogoutPending(); // synchronous, persists if sign-out POST fails
+  unreadAlertCount.value = 0;
   try {
-    const response = await getAlertEvents({
-      unread: "true",
-      limit: 1,
-    });
-
-    unreadAlertCount.value = Math.max(
-      0,
-      Number(response?.count ?? 0)
-    );
-  } catch (error) {
-    // Preserve the last known count if the API is unavailable.
-    console.error(
-      "Unable to refresh unread alert count:",
-      error
-    );
+    await confirmServerLogout();
   } finally {
-    requestInProgress = false;
+    if (!closed) await router.replace("/login");
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Django session heartbeat
-|--------------------------------------------------------------------------
-*/
-
-async function refreshSession() {
-  if (
-    !isRecentlyActive() ||
-    showInactivityWarning.value ||
-    logoutInProgress.value
-  ) {
-    return;
-  }
-
-  try {
-    await getCurrentUser();
-  } catch (error) {
-    console.error(
-      "Session heartbeat failed:",
-      error
-    );
-
-    await forceLogout();
-  }
+async function handleLogout() {
+  await forceLogout();
 }
-
-/*
-|--------------------------------------------------------------------------
-| Clear inactivity timers
-|--------------------------------------------------------------------------
-*/
-
-function clearSessionTimers() {
-  if (warningTimeoutId !== null) {
-    window.clearTimeout(warningTimeoutId);
-    warningTimeoutId = null;
-  }
-
-  if (countdownIntervalId !== null) {
-    window.clearInterval(countdownIntervalId);
-    countdownIntervalId = null;
-  }
-
-  if (logoutTimeoutId !== null) {
-    window.clearTimeout(logoutTimeoutId);
-    logoutTimeoutId = null;
-  }
-}
-
-/*
-|--------------------------------------------------------------------------
-| Schedule inactivity warning
-|--------------------------------------------------------------------------
-*/
-
-function scheduleInactivityWarning() {
-  clearSessionTimers();
-
-  showInactivityWarning.value = false;
-  sessionError.value = "";
-
-  const warningDelay =
-    INACTIVITY_LIMIT - WARNING_BEFORE_LOGOUT;
-
-  warningTimeoutId = window.setTimeout(
-    showWarning,
-    warningDelay
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Show inactivity warning
-|--------------------------------------------------------------------------
-*/
-
-function showWarning() {
-  showInactivityWarning.value = true;
-
-  const elapsed = Date.now() - lastActivityAt;
-
-  remainingSeconds.value = Math.max(
-    0,
-    Math.ceil(
-      (INACTIVITY_LIMIT - elapsed) / 1000
-    )
-  );
-
-  countdownIntervalId = window.setInterval(() => {
-    const elapsedNow = Date.now() - lastActivityAt;
-
-    remainingSeconds.value = Math.max(
-      0,
-      Math.ceil(
-        (INACTIVITY_LIMIT - elapsedNow) / 1000
-      )
-    );
-  }, 1000);
-
-  logoutTimeoutId = window.setTimeout(
-    forceLogout,
-    Math.max(0, INACTIVITY_LIMIT - elapsed)
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Handle user interaction
-|--------------------------------------------------------------------------
-*/
-
-function handleUserActivity() {
-  if (
-    showInactivityWarning.value ||
-    logoutInProgress.value
-  ) {
-    return;
-  }
-
-  const now = Date.now();
-
-  // Prevent excessive timer resets caused by mouse movement.
-  if (now - lastTrackedActivityAt < 1000) {
-    return;
-  }
-
-  lastTrackedActivityAt = now;
-  lastActivityAt = now;
-
-  scheduleInactivityWarning();
-}
-
-/*
-|--------------------------------------------------------------------------
-| Stay logged in
-|--------------------------------------------------------------------------
-*/
 
 async function handleStayLoggedIn() {
-  if (
-    checkingSession.value ||
-    logoutInProgress.value
-  ) {
-    return;
-  }
-
+  if (checkingSession.value || logoutInProgress.value) return;
   checkingSession.value = true;
   sessionError.value = "";
-
   try {
-    // Confirm that the Django session is still valid.
-    await getCurrentUser();
-
-    lastActivityAt = Date.now();
-    lastTrackedActivityAt = lastActivityAt;
-
-    scheduleInactivityWarning();
-  } catch (error) {
-    sessionError.value =
-      "Your session has expired. Redirecting to login.";
-
+    const data = await confirmSessionActivity();
+    if (!acceptDeadline(data?.session?.expires_at)) {
+      throw new Error("No session expiration returned.");
+    }
+    lastActivityCallAt = Date.now();
+  } catch {
+    sessionError.value = "Your session could not be renewed. Please sign in again.";
     await forceLogout();
   } finally {
     checkingSession.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Force logout
-|--------------------------------------------------------------------------
-*/
-
-async function forceLogout() {
-  if (logoutInProgress.value) {
+function handleUserActivity(event) {
+  // Synthetic/programmatic DOM events cannot claim human activity.
+  if (!event?.isTrusted) return;
+  if (logoutInProgress.value || checkingSession.value || heartbeatInFlight || closed) return;
+  if (document.visibilityState === "hidden" || showInactivityWarning.value) return;
+  const now = Date.now();
+  if (now - lastUserInteractionAt < 1000) return;
+  lastUserInteractionAt = now;
+  if (!deadline || now >= deadline) {
+    void forceLogout();
     return;
   }
+  // A real pointer/key/scroll action is required before this POST.
+  // Passive route checks, data refreshes and heartbeat timers never POST.
+  if (now - lastActivityCallAt < HEARTBEAT_MIN_GAP) return;
+  lastActivityCallAt = now;
+  heartbeatInFlight = true;
+  void (async () => {
+    try {
+      const data = await confirmSessionActivity();
+      if (!acceptDeadline(data?.session?.expires_at)) {
+        throw new Error("Missing expiry");
+      }
+    } catch {
+      await forceLogout();
+    } finally {
+      heartbeatInFlight = false;
+    }
+  })();
+}
 
-  logoutInProgress.value = true;
-
-  clearSessionTimers();
-
-  if (refreshIntervalId !== null) {
-    window.clearInterval(refreshIntervalId);
-    refreshIntervalId = null;
-  }
-
-  if (heartbeatIntervalId !== null) {
-    window.clearInterval(heartbeatIntervalId);
-    heartbeatIntervalId = null;
-  }
-
-  unreadAlertCount.value = 0;
-
+async function refreshUnreadAlertCount() {
+  if (logoutInProgress.value || document.visibilityState === "hidden") return;
   try {
-    await logoutUser();
-  } catch (error) {
-    // Still redirect if the server is unavailable.
-    console.warn(
-      "Logout request failed; redirecting locally:",
-      error
-    );
+    const result = await getAlertEvents({ unread: "true", limit: 1 });
+    if (!logoutInProgress.value) {
+      unreadAlertCount.value = Math.max(0, Number(result?.count ?? 0));
+    }
+  } catch {
+    // Preserve last known count; this GET must not renew a session.
   }
-
-  await router.replace("/login");
 }
 
-/*
-|--------------------------------------------------------------------------
-| Manual logout
-|--------------------------------------------------------------------------
-*/
-
-async function handleLogout() {
-  await forceLogout();
+function onStorage(event) {
+  if (event.key === PENDING_LOGOUT_KEY && logoutPending()) {
+    void router.replace("/login");
+  }
+  if (event.key === SESSION_EXPIRY_KEY) {
+    const next = savedSessionExpiry();
+    if (next) deadline = next;
+    updateCountdown();
+  }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Component lifecycle
-|--------------------------------------------------------------------------
-*/
+function onVisible() {
+  if (document.visibilityState === "visible") updateCountdown();
+}
 
-const activityEvents = [
-  "pointerdown",
-  "keydown",
-  "touchstart",
-  "scroll",
-  "mousemove",
-];
+const activityEvents = ["pointerdown", "keydown", "touchstart", "scroll"];
 
-onMounted(() => {
-  lastActivityAt = Date.now();
-
-  scheduleInactivityWarning();
-
-  // Track real user interactions.
-  activityEvents.forEach((eventName) => {
-    window.addEventListener(
-      eventName,
-      handleUserActivity,
-      { passive: true }
-    );
-  });
-
-  // Initial unread alert count.
-  refreshUnreadAlertCount();
-
-  // Refresh unread alerts every minute while active.
-  refreshIntervalId = window.setInterval(
-    refreshUnreadAlertCount,
-    60_000
-  );
-
-  // Refresh the Django session every five minutes while active.
-  heartbeatIntervalId = window.setInterval(
-    refreshSession,
-    HEARTBEAT_INTERVAL
-  );
+onMounted(async () => {
+  try {
+    const result = await getCurrentUser();
+    if (!result?.user || !result?.session?.expires_at ||
+        sessionIsPastDeadline(result.session.expires_at)) {
+      throw new Error("Session missing or expired");
+    }
+    if (!closed) acceptDeadline(result.session.expires_at);
+  } catch {
+    if (!closed) {
+      await forceLogout();
+      return;
+    }
+  }
+  if (closed) return;
+  for (const event of activityEvents) {
+    window.addEventListener(event, handleUserActivity, { passive: true });
+  }
+  window.addEventListener("storage", onStorage);
+  document.addEventListener("visibilitychange", onVisible);
+  updateCountdown();
+  timerId = window.setInterval(updateCountdown, 1000);
+  void refreshUnreadAlertCount();
+  alertIntervalId = window.setInterval(refreshUnreadAlertCount, 60_000);
 });
 
 onBeforeUnmount(() => {
-  clearSessionTimers();
-
-  if (refreshIntervalId !== null) {
-    window.clearInterval(refreshIntervalId);
-    refreshIntervalId = null;
-  }
-
-  if (heartbeatIntervalId !== null) {
-    window.clearInterval(heartbeatIntervalId);
-    heartbeatIntervalId = null;
-  }
-
-  activityEvents.forEach((eventName) => {
-    window.removeEventListener(
-      eventName,
-      handleUserActivity
-    );
-  });
+  closed = true;
+  if (timerId !== null) window.clearInterval(timerId);
+  if (alertIntervalId !== null) window.clearInterval(alertIntervalId);
+  for (const event of activityEvents) window.removeEventListener(event, handleUserActivity);
+  window.removeEventListener("storage", onStorage);
+  document.removeEventListener("visibilitychange", onVisible);
 });
 </script>
 
