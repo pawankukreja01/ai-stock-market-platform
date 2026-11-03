@@ -40,9 +40,13 @@ class LoginRateThrottle(SimpleRateThrottle):
     scope = "auth_login"
 
     def get_cache_key(self, request, view):
+        # Never trust an arbitrary HTTP_X_FORWARDED_FOR value supplied by
+        # the requester. A trusted edge proxy must handle client identity
+        # separately, before enabling this in public production.
+        remote_address = request.META.get("REMOTE_ADDR", "unknown")
         return self.cache_format % {
             "scope": self.scope,
-            "ident": self.get_ident(request),
+            "ident": remote_address,
         }
 
 
