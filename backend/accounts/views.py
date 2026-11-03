@@ -17,7 +17,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.middleware.csrf import get_token
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
-from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from rest_framework import status
 from rest_framework.decorators import (
@@ -32,6 +32,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
 from .session_security import (extend_user_activity, session_status)
+from .csrf_security import require_csrf_for_api
 from .email_utils import (
     EMAIL_VERIFICATION_SALT,
     send_verification_email,
@@ -222,7 +223,7 @@ def current_user(request):
     return response
 
 
-@csrf_protect
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def confirm_user_activity(request):
@@ -462,7 +463,7 @@ def upload_profile_picture(request):
 # Logout
 # --------------------------------------------------
 
-@csrf_protect
+@require_csrf_for_api
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def logout_view(request):
