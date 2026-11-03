@@ -312,6 +312,9 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 # --------------------------------------------------
 
 REST_FRAMEWORK = {
+    # Never trust client-supplied X-Forwarded-For for rate-limit identity.
+    # Behind a trusted proxy, configure this only after auditing its headers.
+    "NUM_PROXIES": 0,
     "DEFAULT_THROTTLE_RATES": {
         # Maximum five verification attempts per hour.
         "auth_verification": "5/hour",
