@@ -174,7 +174,7 @@ def login_view(request):
     django_login(request._request, user)
     start_user_session(request._request)
 
-    return Response(
+    response = Response(
         {
             "message": "Login successful.",
             "user": {
@@ -187,6 +187,8 @@ def login_view(request):
         },
         status=status.HTTP_200_OK,
     )
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_csrf_for_api
