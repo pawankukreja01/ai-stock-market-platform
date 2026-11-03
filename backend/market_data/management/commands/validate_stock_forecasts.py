@@ -125,29 +125,27 @@ def build_model_scorecard(report):
 
 
 def render_model_scorecard(scorecard):
-    """Short human-readable line without implying validated predictive skill."""
+    """Short human-readable diagnostics; no claim of forecasting edge."""
     if scorecard["mae_percent"] is None or scorecard["best_baseline"] is None:
         return "  Scorecard: insufficient comparable out-of-sample metrics."
 
     improvement = scorecard["mae_improvement_vs_best_baseline_percentage_points"]
     balanced = scorecard["balanced_directional_accuracy_percent"]
     specificity = scorecard["negative_specificity_percent"]
+    balanced_label = (
+        f"{balanced:.1f}%" if balanced is not None else "unavailable"
+    )
+    specificity_label = (
+        f"{specificity:.1f}%" if specificity is not None else "unavailable"
+    )
     return (
         f"  MAE: model {scorecard['mae_percent']:.3f}% vs best baseline "
         f"({scorecard['best_baseline']}) "
         f"{scorecard['best_baseline_mae_percent']:.3f}%; "
-        f"difference {improvement:+.3f} percentage points "
-        "(positive means model is better). "
-        f"Balanced direction: {balanced:.1f}% "
-        if balanced is not None else
-        f"  MAE: model {scorecard['mae_percent']:.3f}% vs best baseline "
-        f"({scorecard['best_baseline']}) "
-        f"{scorecard['best_baseline_mae_percent']:.3f}%; "
-        f"difference {improvement:+.3f} percentage points. "
-    ) + (
-        f"| Negative specificity: {specificity:.1f}%"
-        if specificity is not None else
-        "| Negative specificity: unavailable"
+        f"improvement {improvement:+.3f} percentage points "
+        "(positive means model has lower MAE); "
+        f"balanced direction {balanced_label}; "
+        f"negative specificity {specificity_label}."
     )
 
 
