@@ -24,6 +24,7 @@ from ml_models import (
 from walk_forward import generate_walk_forward_splits
 from backtesting import generate_walk_forward_predictions
 from ml_final_validation import build_final_validation_report
+from market_data.prediction_quality import assess_direction_bias
 
 
 MODEL_FACTORIES = {
@@ -135,6 +136,9 @@ class Command(BaseCommand):
                     X, y, folds, preds, opts["model"], horizon,
                 )
                 beat_all = model_beats_all_baselines(details)
+                direction_bias = assess_direction_bias(
+                    details["metrics"]["selected_model"]
+                )
                 evaluated += 1
                 wins += int(beat_all)
                 item.update({
@@ -145,6 +149,7 @@ class Command(BaseCommand):
                         details["protocol"]["out_of_sample_observations"]
                     ),
                     "beats_all_baselines_on_mae": beat_all,
+                    "directional_bias": direction_bias,
                     "selected_model_metrics": details["metrics"]["selected_model"],
                     "baseline_metrics": {
                         k: details["metrics"][k]
@@ -154,6 +159,8 @@ class Command(BaseCommand):
                 })
                 verdict = "beat all three baselines" if beat_all else "did not beat all baselines"
                 self.stdout.write(f"{stock.symbol}: {len(folds)} folds; {verdict}")
+                if direction_bias["warning"]:
+                    self.stdout.write(f"  CAUTION: {direction_bias['warning']}")
 
             except (ValueError, TypeError, ArithmeticError) as exc:
                 item.update({"status": "insufficient_or_invalid_data", "reason": str(exc)})
