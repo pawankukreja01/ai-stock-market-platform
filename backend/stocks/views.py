@@ -28,7 +28,7 @@ class StockCatalogPagination(PageNumberPagination):
         )
 
 
-class StockViewSet(viewsets.ModelViewSet):
+class StockViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Stock.objects.all().order_by("symbol")
     serializer_class = StockSerializer
     pagination_class = StockCatalogPagination
@@ -45,10 +45,9 @@ class StockViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
-        # Browsing endpoints only show active stocks. Detail/update actions
-        # retain the original queryset behavior.
+        # Public catalogue and detail endpoints expose only active stocks.
         if self.action not in {"list", "popular"}:
-            return queryset
+            return queryset.filter(is_active=True)
 
         queryset = queryset.filter(is_active=True)
         params = self.request.query_params
