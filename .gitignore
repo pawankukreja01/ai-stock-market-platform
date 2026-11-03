@@ -49,3 +49,9 @@ logs/
 
 # Downloaded local benchmark cache (not source data)
 /backend/data/raw/benchmarks/
+
+# Isolated preview environment and browser test artifacts
+preview.env
+e2e/playwright-report/
+e2e/test-results/
+e2e/node_modules/
