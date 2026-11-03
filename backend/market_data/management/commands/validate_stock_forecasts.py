@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Min, Max
 from django.utils import timezone
 
 from stocks.models import Stock
@@ -33,6 +34,19 @@ MODEL_FACTORIES = {
     "xgboost": create_xgboost_model,
 }
 HORIZONS = (1, 5, 20, 60, 126, 252)
+
+
+def common_calendar_window(bounds):
+    """Common inclusive calendar dates, without masking missing sessions."""
+    if not bounds or any(
+        item.get("first") is None or item.get("last") is None for item in bounds
+    ):
+        raise ValueError("Every stock needs dated historical prices.")
+    start = max(item["first"] for item in bounds)
+    end = min(item["last"] for item in bounds)
+    if start >= end:
+        raise ValueError("Selected stocks have no usable common calendar interval.")
+    return start, end
 
 
 def model_beats_all_baselines(report):
@@ -59,6 +73,10 @@ class Command(BaseCommand):
         parser.add_argument("--symbols", nargs="+", default=None)
         parser.add_argument("--limit", type=int, default=5)
         parser.add_argument("--horizon", type=int, choices=HORIZONS, default=5)
+        parser.add_argument(
+            "--common-window", action="store_true",
+            help="Use shared calendar date bounds for all selected stocks.",
+        )
         parser.add_argument("--model", choices=tuple(MODEL_FACTORIES),
                             default="random_forest")
         parser.add_argument("--min-train", type=int, default=500)
@@ -90,7 +108,31 @@ class Command(BaseCommand):
         else:
             stocks = list(Stock.objects.filter(is_active=True).order_by("symbol")[:limit])
 
+        today = timezone.localdate()
+        common_window = None
+        if opts["common_window"]:
+            bounds = [
+                HistoricalPrice.objects.filter(
+                    stock=stock, date__lte=today, close_price__gt=0,
+                ).aggregate(first=Min("date"), last=Max("date"))
+                for stock in stocks
+            ]
+            try:
+                common_window = common_calendar_window(bounds)
+            except ValueError as exc:
+                raise CommandError(str(exc)) from exc
+            self.stdout.write(
+                f"Common calendar window: {common_window[0]} to {common_window[1]}"
+            )
+
         report = {
+            "common_calendar_window": (
+                {
+                    "start_date": common_window[0].isoformat(),
+                    "end_date": common_window[1].isoformat(),
+                    "note": "Same calendar bounds; trading sessions may differ.",
+                } if common_window else None
+            ),
             "protocol": "Expanding window, no shuffling, H+1-row train/test purge",
             "source": "stored MarketPulse database (no external downloads)",
             "as_of": timezone.localdate().isoformat(),
@@ -109,7 +151,9 @@ class Command(BaseCommand):
         for stock in stocks:
             rows = list(
                 HistoricalPrice.objects.filter(
-                    stock=stock, date__lte=timezone.localdate()
+                    stock=stock,
+                    date__lte=(common_window[1] if common_window else today),
+                    **({"date__gte": common_window[0]} if common_window else {}),
                 ).order_by("date").values(
                     "date", "open_price", "high_price", "low_price",
                     "close_price", "volume", "is_ohlc_valid", "is_volume_valid",
