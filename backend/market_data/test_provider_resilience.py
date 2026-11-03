@@ -90,3 +90,26 @@ class ProviderFailFastTests(TestCase):
         fetch.assert_called_once()
         self.old.refresh_from_db()
         self.assertEqual(self.old.price, Decimal("200.000000"))
+
+    def test_currency_metadata_stops_after_first_429(self):
+        from market_data.currency_utils import (
+            CurrencyMetadataUnavailable,
+            get_provider_currency_details,
+        )
+
+        class RefusingTicker:
+            info_accessed = False
+
+            @property
+            def fast_info(self):
+                raise RuntimeError("HTTP 429 Too Many Requests")
+
+            @property
+            def info(self):
+                self.info_accessed = True
+                return {"currency": "USD"}
+
+        ticker = RefusingTicker()
+        with self.assertRaises(CurrencyMetadataUnavailable):
+            get_provider_currency_details(ticker, required=False)
+        self.assertFalse(ticker.info_accessed)
