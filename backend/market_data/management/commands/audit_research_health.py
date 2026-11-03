@@ -5,20 +5,81 @@ No requests to providers, no model fitting, no DB writes and no alert events.
 """
 
 import json
+from datetime import datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from stocks.models import Stock
+from stocks.catalog import market_for_exchange
 from market_data.models import Fundamental, HistoricalPrice, LatestQuote, NewsArticle
+
+
+REGULAR_SESSIONS = {
+    # Exchange-local standard trading hours. This is NOT a full holiday or
+    # early-close calendar and must be labelled as an approximation.
+    "US": ("America/New_York", time(9, 30), time(16, 0)),
+    "UK": ("Europe/London", time(8, 0), time(16, 30)),
+}
+
+
+def regular_session_reference(*, now, exchange):
+    """Last ordinary weekday market close or current in-session timestamp.
+
+    The reference avoids marking Friday's close stale on a normal Sunday.
+    Holidays, early closes and trading halts are deliberately NOT inferred.
+    """
+    market = market_for_exchange(exchange)
+    settings = REGULAR_SESSIONS.get(market)
+    if settings is None:
+        return {
+            "market": market,
+            "regular_session_state": "unknown",
+            "freshness_reference_utc": now.isoformat(),
+            "calendar_note": "No configured regular market hours for this exchange.",
+        }, now
+
+    zone_name, opening, closing = settings
+    zone = ZoneInfo(zone_name)
+    local_now = now.astimezone(zone)
+    current_date = local_now.date()
+    in_regular_hours = (
+        local_now.weekday() < 5
+        and opening <= local_now.time().replace(tzinfo=None) < closing
+    )
+    if in_regular_hours:
+        reference = now
+    else:
+        last_day = current_date
+        if local_now.weekday() >= 5 or local_now.time().replace(tzinfo=None) < opening:
+            last_day -= timedelta(days=1)
+        while last_day.weekday() >= 5:
+            last_day -= timedelta(days=1)
+        close_at = datetime.combine(last_day, closing, tzinfo=zone)
+        reference = close_at.astimezone(now.tzinfo)
+
+    return {
+        "market": market,
+        "regular_session_state": (
+            "regular_hours" if in_regular_hours else "outside_regular_hours"
+        ),
+        "market_timezone": zone_name,
+        "freshness_reference_utc": reference.isoformat(),
+        "calendar_note": (
+            "Weekday regular trading hours only; public holidays, early "
+            "closes and halts are not accounted for."
+        ),
+    }, reference
 
 
 def research_health_status(
     *, now, latest_price_date, price_count, invalid_price_count,
     latest_quote_time, quarterly_count, annual_count,
     min_history, max_history_age_days, max_quote_age_minutes,
+    exchange="",
 ):
     """Pure status calculation; provider timestamps are authoritative."""
     flags = []
@@ -36,19 +97,28 @@ def research_health_status(
     if invalid_price_count:
         flags.append("invalid_ohlc_rows")
 
+    session, freshness_reference = regular_session_reference(
+        now=now, exchange=exchange
+    )
     if latest_quote_time is None:
         flags.append("missing_quote")
         quote_age_minutes = None
+        quote_age_from_session_reference = None
     else:
         try:
             quote_age_minutes = round(
                 (now - latest_quote_time).total_seconds() / 60.0, 1
             )
+            quote_age_from_session_reference = round(
+                (freshness_reference - latest_quote_time).total_seconds() / 60.0,
+                1,
+            )
         except TypeError:
             quote_age_minutes = None
+            quote_age_from_session_reference = None
         if quote_age_minutes is None or quote_age_minutes < -5:
             flags.append("invalid_quote_timestamp")
-        elif quote_age_minutes > max_quote_age_minutes:
+        elif quote_age_from_session_reference > max_quote_age_minutes:
             flags.append("stale_quote")
 
     # Missing financial statements are availability warnings rather
@@ -69,6 +139,8 @@ def research_health_status(
             latest_price_date.isoformat() if latest_price_date else None
         ),
         "quote_source_age_minutes": quote_age_minutes,
+        "quote_age_vs_session_reference_minutes": quote_age_from_session_reference,
+        "session_context": session,
     }
 
 
@@ -153,9 +225,12 @@ class Command(BaseCommand):
             )
         }
         news_summary = {
-            item["stock_id"]: item["latest_news"]
+            item["stock_id"]: item
             for item in NewsArticle.objects.filter(stock_id__in=stock_ids)
-            .values("stock_id").annotate(latest_news=Max("published_at"))
+            .values("stock_id").annotate(
+                latest_news=Max("published_at"),
+                news_count=Count("pk"),
+            )
         }
         quote_times = dict(
             LatestQuote.objects.filter(stock_id__in=stock_ids)
@@ -169,7 +244,9 @@ class Command(BaseCommand):
             annual_count = statements.get("annual_count", 0)
             quarterly_count = statements.get("quarterly_count", 0)
             source_time = quote_times.get(stock.pk)
-            latest_news = news_summary.get(stock.pk)
+            news = news_summary.get(stock.pk, {})
+            latest_news = news.get("latest_news")
+            news_count = news.get("news_count", 0)
 
             details = research_health_status(
                 now=now,
@@ -182,9 +259,16 @@ class Command(BaseCommand):
                 min_history=options["min_history"],
                 max_history_age_days=options["max_history_age_days"],
                 max_quote_age_minutes=options["max_quote_age_minutes"],
+                exchange=stock.exchange,
             )
+            if news_count == 0:
+                details["availability_gaps"].append("news_articles_unavailable")
+            elif latest_news is None:
+                details["availability_gaps"].append("news_publication_dates_unavailable")
+
             details.update({
                 "symbol": stock.symbol,
+                "news_article_count": news_count,
                 "exchange": stock.exchange,
                 "annual_statement_count": annual_count,
                 "quarterly_statement_count": quarterly_count,
@@ -216,6 +300,9 @@ class Command(BaseCommand):
                 ),
                 "stocks_with_no_quarterly_statements": sum(
                     not item["quarterly_statement_count"] for item in rows
+                ),
+                "stocks_with_no_news_articles": sum(
+                    item["news_article_count"] == 0 for item in rows
                 ),
             },
             "stocks": rows,
