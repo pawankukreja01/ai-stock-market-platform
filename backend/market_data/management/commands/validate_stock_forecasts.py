@@ -22,7 +22,7 @@ from ml_models import (
     create_random_forest_model,
     create_xgboost_model,
 )
-from walk_forward import generate_walk_forward_splits
+from walk_forward import generate_walk_forward_splits, describe_fold
 from backtesting import generate_walk_forward_predictions
 from ml_final_validation import build_final_validation_report
 from market_data.prediction_quality import assess_direction_bias
@@ -176,8 +176,11 @@ class Command(BaseCommand):
                 preds = generate_walk_forward_predictions(
                     X, y, folds, MODEL_FACTORIES[opts["model"]],
                 )
+                described_folds = [
+                    describe_fold(X, fold) for fold in folds
+                ]
                 details = build_final_validation_report(
-                    X, y, folds, preds, opts["model"], horizon,
+                    X, y, described_folds, preds, opts["model"], horizon,
                 )
                 beat_all = model_beats_all_baselines(details)
                 direction_bias = assess_direction_bias(
@@ -188,7 +191,10 @@ class Command(BaseCommand):
                 item.update({
                     "status": "evaluated",
                     "usable_observations": len(X),
+                    "usable_start_date": str(X.index[0].date()),
+                    "usable_end_date": str(X.index[-1].date()),
                     "folds": len(folds),
+                    "fold_metrics": details["fold_metrics"],
                     "out_of_sample_observations": (
                         details["protocol"]["out_of_sample_observations"]
                     ),
