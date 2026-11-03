@@ -28,6 +28,45 @@ MarketPulse is a full-stack stock-market research and portfolio analytics applic
 
 ---
 
+## Review build — research readiness and safer historical refresh
+
+The development branch now provides a **Research Health** page at
+`/research-health` in the authenticated sidebar. It uses the local-only
+`GET /api/research-readiness/` endpoint, with an optional `?symbols=AAPL,MSFT`
+parameter (maximum 20 symbols). The endpoint reuses the existing
+`audit_research_health` calculations, reports observed prices, quote source
+timestamps, missing fundamental/news coverage, and explicit approximation
+caveats; it does **not** download market data, fit models, or change records.
+An unauthenticated request is rejected.
+
+**Historical ingestion must be reviewed before applying provider revisions.**
+`ingest_stock_history` now supports:
+
+```bash
+# The restored test database only; never use your original local database.
+cd ~/Desktop/ai-stock-market-platform/backend
+DB_NAME=marketpulse_restored_test python manage.py ingest_stock_history ABF.L --dry-run
+```
+
+`--dry-run` previews the provider response and adjustment-factor revisions
+without writing any prices or stock currency metadata. If existing and
+incoming adjusted/close factors differ by at least 10%, a regular ingest
+fails **before database writes**, with a review message. After checking the
+data and verifying the intended provider convention, the optional
+`--allow-adjustment-revisions` flag explicitly authorizes the revision.
+**Do not use the authorization flag without reviewing the data and preserving
+a backup.** This protects large changed adjustment factors, but is not a
+general proof of provider correctness, and other ordinary historical revisions
+can still update data. The command itself requires provider availability;
+it is not an offline test.
+
+Yahoo Finance may return HTTP 429 (rate limiting). Do not repeatedly retry
+or attempt to bypass provider limits. Existing local prices and research
+health checks remain available while the provider is inaccessible.
+The original `ai_stock_market` database must be preserved. The latest
+readiness and provider safeguards are research tooling, not a declaration
+that predictive models outperform baselines.
+
 ## Main capabilities
 
 The current application includes the following areas:
