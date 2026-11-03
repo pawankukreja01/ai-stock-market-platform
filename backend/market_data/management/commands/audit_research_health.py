@@ -5,7 +5,6 @@ No requests to providers, no model fitting, no DB writes and no alert events.
 """
 
 import json
-from datetime import timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
@@ -13,6 +12,7 @@ from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from stocks.models import Stock
+from market_data.models import Fundamental, HistoricalPrice, LatestQuote, NewsArticle
 
 
 def research_health_status(
@@ -119,53 +119,66 @@ class Command(BaseCommand):
         queryset = Stock.objects.filter(is_active=True)
         if tickers:
             queryset = queryset.filter(symbol__in=tickers)
-        queryset = queryset.annotate(
-            price_count=Count(
-                "historical_prices",
-                filter=Q(historical_prices__date__lte=timezone.localdate()),
-                distinct=True,
-            ),
-            invalid_price_count=Count(
-                "historical_prices",
-                filter=Q(
-                    historical_prices__date__lte=timezone.localdate(),
-                    historical_prices__is_ohlc_valid=False,
-                ),
-                distinct=True,
-            ),
-            latest_price=Max("historical_prices__date"),
-            annual_count=Count(
-                "fundamentals",
-                filter=Q(fundamentals__period_type="annual"),
-                distinct=True,
-            ),
-            quarterly_count=Count(
-                "fundamentals",
-                filter=Q(fundamentals__period_type="quarterly"),
-                distinct=True,
-            ),
-            latest_news=Max("news_articles__published_at"),
-        ).select_related("latest_quote").order_by("symbol")
-
-        if tickers and queryset.count() != len(tickers):
+        stocks = list(queryset.order_by("symbol"))
+        if tickers and len(stocks) != len(tickers):
             raise CommandError("Unknown or inactive symbols in research health request.")
 
+        # Aggregate each related table independently: a single query joining
+        # prices, news and statements would multiply rows dramatically
+        # (years of prices × dozens of articles × financial periods).
+        stock_ids = [stock.pk for stock in stocks]
         now = timezone.now()
+        today = timezone.localdate()
+        price_summary = {
+            item["stock_id"]: item
+            for item in HistoricalPrice.objects.filter(stock_id__in=stock_ids)
+            .values("stock_id").annotate(
+                price_count=Count("pk", filter=Q(date__lte=today)),
+                invalid_price_count=Count(
+                    "pk", filter=Q(date__lte=today, is_ohlc_valid=False)
+                ),
+                latest_price=Max("date"),
+            )
+        }
+        fundamental_summary = {
+            item["stock_id"]: item
+            for item in Fundamental.objects.filter(stock_id__in=stock_ids)
+            .values("stock_id").annotate(
+                annual_count=Count(
+                    "pk", filter=Q(period_type="annual")
+                ),
+                quarterly_count=Count(
+                    "pk", filter=Q(period_type="quarterly")
+                ),
+            )
+        }
+        news_summary = {
+            item["stock_id"]: item["latest_news"]
+            for item in NewsArticle.objects.filter(stock_id__in=stock_ids)
+            .values("stock_id").annotate(latest_news=Max("published_at"))
+        }
+        quote_times = dict(
+            LatestQuote.objects.filter(stock_id__in=stock_ids)
+            .values_list("stock_id", "source_timestamp")
+        )
+
         rows = []
-        for stock in queryset.iterator(chunk_size=100):
-            try:
-                source_time = stock.latest_quote.source_timestamp
-            except (AttributeError, Stock.latest_quote.RelatedObjectDoesNotExist):
-                source_time = None
+        for stock in stocks:
+            price = price_summary.get(stock.pk, {})
+            statements = fundamental_summary.get(stock.pk, {})
+            annual_count = statements.get("annual_count", 0)
+            quarterly_count = statements.get("quarterly_count", 0)
+            source_time = quote_times.get(stock.pk)
+            latest_news = news_summary.get(stock.pk)
 
             details = research_health_status(
                 now=now,
-                latest_price_date=stock.latest_price,
-                price_count=stock.price_count,
-                invalid_price_count=stock.invalid_price_count,
+                latest_price_date=price.get("latest_price"),
+                price_count=price.get("price_count", 0),
+                invalid_price_count=price.get("invalid_price_count", 0),
                 latest_quote_time=source_time,
-                annual_count=stock.annual_count,
-                quarterly_count=stock.quarterly_count,
+                annual_count=annual_count,
+                quarterly_count=quarterly_count,
                 min_history=options["min_history"],
                 max_history_age_days=options["max_history_age_days"],
                 max_quote_age_minutes=options["max_quote_age_minutes"],
@@ -173,10 +186,10 @@ class Command(BaseCommand):
             details.update({
                 "symbol": stock.symbol,
                 "exchange": stock.exchange,
-                "annual_statement_count": stock.annual_count,
-                "quarterly_statement_count": stock.quarterly_count,
+                "annual_statement_count": annual_count,
+                "quarterly_statement_count": quarterly_count,
                 "latest_news_date": (
-                    stock.latest_news.isoformat() if stock.latest_news else None
+                    latest_news.isoformat() if latest_news else None
                 ),
                 "quote_source_timestamp": (
                     source_time.isoformat() if source_time else None
