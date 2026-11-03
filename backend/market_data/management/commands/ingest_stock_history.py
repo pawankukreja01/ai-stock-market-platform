@@ -1,5 +1,6 @@
 
 from datetime import date, datetime
+import math
 from decimal import (
     Decimal,
     InvalidOperation,
@@ -69,6 +70,59 @@ class Command(BaseCommand):
             default=30.0,
             help="Yahoo Finance request timeout in seconds.",
         )
+        parser.add_argument(
+            "--dry-run", action="store_true",
+            help="Preview the provider history without saving any records.",
+        )
+        parser.add_argument(
+            "--allow-adjustment-revisions", action="store_true",
+            help=(
+                "Explicitly authorize historical adjusted/close factor "
+                "revisions of 10% or more after reviewing a dry run."
+            ),
+        )
+
+    @staticmethod
+    def _large_adjustment_revisions(existing, provider, threshold=0.10):
+        """Compare adjusted/close factors without modifying either series.
+
+        Both numerator and denominator are from the same provider currency,
+        so converting GBp to GBP does not affect the factor. False-positive
+        yfinance repairs are possible; flags require human inspection.
+        """
+        changes = []
+        for when, old_factor in existing.items():
+            new_factor = provider.get(when)
+            if (
+                old_factor is None or new_factor is None
+                or old_factor <= 0 or new_factor <= 0
+                or not math.isfinite(old_factor)
+                or not math.isfinite(new_factor)
+            ):
+                continue
+            change = new_factor / old_factor - 1
+            if abs(change) >= threshold:
+                changes.append((when, round(change * 100, 2)))
+        return changes
+
+    @classmethod
+    def _preflight_adjusted_revisions(cls, stock, data):
+        """Run all revision checks before any update_or_create call."""
+        old = {
+            row["date"]: float(row["adjusted_close"] / row["close_price"])
+            for row in HistoricalPrice.objects.filter(stock=stock)
+            .exclude(close_price__lte=0)
+            .values("date", "close_price", "adjusted_close")
+            if row["adjusted_close"] is not None and row["adjusted_close"] > 0
+        }
+        incoming = {}
+        for index, row in data.iterrows():
+            when = cls._get_trading_date(index)
+            close = cls._parse_decimal(row["Close"])[0]
+            adjusted = cls._parse_decimal(row["Adj Close"])[0]
+            if close is not None and adjusted is not None and close > 0 and adjusted > 0:
+                incoming[when] = float(adjusted / close)
+        return cls._large_adjustment_revisions(old, incoming)
 
     # =========================================================
     # DECIMAL AND PRICE NORMALIZATION
@@ -370,6 +424,8 @@ class Command(BaseCommand):
         symbol = options["symbol"].upper().strip()
         period = options["period"]
         timeout = options["timeout"]
+        dry_run = options["dry_run"]
+        allow_adjustment_revisions = options["allow_adjustment_revisions"]
 
         if not symbol:
             raise CommandError(
@@ -434,6 +490,44 @@ class Command(BaseCommand):
                 "Historical data is missing required columns: "
                 + ", ".join(sorted(missing_columns))
             )
+
+        # Protect existing records before any stock metadata or price write.
+        # Large revisions may be provider corrections or false positives.
+        try:
+            adjustment_revisions = self._preflight_adjusted_revisions(
+                stock, data
+            )
+        except (ValueError, TypeError, InvalidOperation, OverflowError) as exc:
+            raise CommandError(
+                f"Could not preflight historical adjustments: {exc}"
+            ) from exc
+
+        if adjustment_revisions:
+            preview = ", ".join(
+                f"{when} ({difference:+.2f}%)"
+                for when, difference in adjustment_revisions[:5]
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    f"CAUTION: {len(adjustment_revisions)} historical "
+                    "adjusted/close factor revisions >=10%: " + preview
+                )
+            )
+            if not dry_run and not allow_adjustment_revisions:
+                raise CommandError(
+                    "Historical adjustment revisions require review. "
+                    "Run --dry-run first. To apply intentionally, pass "
+                    "--allow-adjustment-revisions; no records were changed."
+                )
+
+        if dry_run:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"DRY RUN: Yahoo returned {len(data)} rows for {symbol}. "
+                    "No stock metadata or historical rows were updated."
+                )
+            )
+            return
 
         # -----------------------------------------------------
         # PROVIDER CURRENCY METADATA
