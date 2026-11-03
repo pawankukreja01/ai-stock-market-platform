@@ -41,6 +41,11 @@ const routes = [
         component: () => import("./views/Dashboard.vue"),
       },
       {
+        path: "getting-started",
+        name: "GettingStarted",
+        component: () => import("./views/GettingStarted.vue"),
+      },
+      {
         path: "profile",
         name: "Profile",
         component: () => import("./views/Profile.vue"),
@@ -55,6 +60,11 @@ const routes = [
         name: "StockResearch",
         component: () => import("./views/StockResearch.vue"),
         props: true,
+      },
+      {
+        path: "forecast-performance",
+        name: "ForecastPerformance",
+        component: () => import("./views/ForecastPerformance.vue"),
       },
       {
         path: "research-health",

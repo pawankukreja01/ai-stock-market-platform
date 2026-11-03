@@ -15,7 +15,9 @@ from django.db import connection
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from market_data.quote_service import fetch_latest_quote, QuoteDataUnavailable
+from market_data.quote_service import (
+    fetch_latest_quote, QuoteDataUnavailable, QuoteProviderRateLimited,
+)
 from stocks.models import Stock
 
 
@@ -150,6 +152,7 @@ class Command(BaseCommand):
                     f"Cycle {cycle} started at {timezone.now().isoformat()}"
                 )
 
+                rate_limited = False
                 for index, stock in enumerate(stocks):
                     if index:
                         time.sleep(options["delay_seconds"])
@@ -157,6 +160,15 @@ class Command(BaseCommand):
                         quote = fetch_latest_quote(
                             stock, timeout=options["timeout"]
                         )
+                    except QuoteProviderRateLimited as exc:
+                        failed += 1
+                        rate_limited = True
+                        self.stderr.write(
+                            f"{stock.symbol}: Yahoo rate limit detected. "
+                            "Stopping all quote requests this cycle; "
+                            "existing stored quotes were not overwritten."
+                        )
+                        break
                     except QuoteDataUnavailable as exc:
                         failed += 1
                         self.stderr.write(
@@ -206,6 +218,18 @@ class Command(BaseCommand):
                             f"{stock.symbol}: price-alert evaluation failed "
                             f"({type(exc).__name__}): {exc}"
                         )
+
+                if rate_limited:
+                    self.stdout.write(
+                        "Monitoring stopped to avoid further requests while "
+                        "the provider is rate limiting. Recheck provider "
+                        "availability before explicitly restarting."
+                    )
+                    if not options["continuous"]:
+                        raise CommandError(
+                            "Yahoo provider rate limited; remaining stocks skipped."
+                        )
+                    break
 
                 self.stdout.write(
                     f"Cycle {cycle} finished: {evaluated} symbols evaluated, "

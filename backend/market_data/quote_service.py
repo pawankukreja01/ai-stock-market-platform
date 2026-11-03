@@ -5,6 +5,7 @@ import yfinance as yf
 
 from django.utils import timezone
 
+from .provider_errors import is_provider_rate_limit, safe_provider_error
 from .models import LatestQuote
 from .currency_utils import (
     CurrencyMetadataUnavailable,
@@ -15,6 +16,10 @@ from .currency_utils import (
 
 class QuoteDataUnavailable(Exception):
     """Raised when a usable quote cannot be obtained."""
+
+
+class QuoteProviderRateLimited(QuoteDataUnavailable):
+    """Quote fetch stopped after provider rate limiting, without touching cache."""
 
 
 def _valid_history(data):
@@ -152,6 +157,10 @@ def fetch_latest_quote(stock, timeout=15):
     try:
         currency = get_provider_currency_details(ticker)
     except CurrencyMetadataUnavailable as exc:
+        if is_provider_rate_limit(exc):
+            raise QuoteProviderRateLimited(
+                safe_provider_error(exc)
+            ) from exc
         raise QuoteDataUnavailable(
             f"Cannot verify currency for {stock.symbol}: {exc}"
         ) from exc
@@ -173,6 +182,10 @@ def fetch_latest_quote(stock, timeout=15):
             )
         )
     except Exception as exc:
+        if is_provider_rate_limit(exc):
+            raise QuoteProviderRateLimited(
+                safe_provider_error(exc)
+            ) from exc
         intraday_error = str(exc)
 
     try:
@@ -186,6 +199,10 @@ def fetch_latest_quote(stock, timeout=15):
             )
         )
     except Exception as exc:
+        if is_provider_rate_limit(exc):
+            raise QuoteProviderRateLimited(
+                safe_provider_error(exc)
+            ) from exc
         daily_error = str(exc)
 
     if intraday_data is not None:

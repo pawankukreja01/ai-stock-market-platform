@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from market_data.provider_errors import is_provider_rate_limit
+
 
 class CurrencyMetadataUnavailable(Exception):
     """Raised when the provider's trading currency cannot be verified."""
@@ -76,6 +78,13 @@ def get_provider_currency_details(ticker, *, required=True):
             provider_info = getattr(ticker, attribute)
             raw_currency = provider_info.get("currency")
         except Exception as exc:
+            if is_provider_rate_limit(exc):
+                # Do not fetch another metadata endpoint after an explicit
+                # provider rejection; avoid repeated 429 requests.
+                raise CurrencyMetadataUnavailable(
+                    "Yahoo Finance rate limited (HTTP 429); "
+                    "currency metadata was not retrieved."
+                ) from exc
             errors.append(f"{attribute}: {exc}")
             continue
 

@@ -23,6 +23,13 @@
         </router-link>
 
         <router-link
+          to="/getting-started"
+          exact-active-class="router-link-exact-active"
+        >
+          Getting Started
+        </router-link>
+
+        <router-link
           to="/profile"
           exact-active-class="router-link-exact-active"
         >
@@ -48,6 +55,13 @@
           exact-active-class="router-link-exact-active"
         >
           Portfolio
+        </router-link>
+
+        <router-link
+          to="/forecast-performance"
+          exact-active-class="router-link-exact-active"
+        >
+          Forecast Performance
         </router-link>
 
         <router-link

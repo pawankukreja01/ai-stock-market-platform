@@ -311,3 +311,56 @@ class LatestQuote(models.Model):
             f"{self.stock.symbol} - "
             f"{self.price} {self.currency or ''}"
         )
+
+
+
+class ProspectiveForecast(models.Model):
+    """Pre-outcome server-generated ML prediction, independently scored later.
+
+    Predictions are never revised in-place after creation. Only the outcome
+    fields are populated once, when a full, valid future horizon is stored.
+    The target excludes dividends and uses next-close entry.
+    """
+
+    stock = models.ForeignKey(
+        Stock, on_delete=models.CASCADE, related_name="prospective_forecasts"
+    )
+    model_key = models.CharField(max_length=40)
+    horizon = models.PositiveSmallIntegerField()
+    signal_date = models.DateField()
+    predicted_return = models.DecimalField(max_digits=16, decimal_places=10)
+    lower_return = models.DecimalField(
+        max_digits=16, decimal_places=10, null=True, blank=True
+    )
+    upper_return = models.DecimalField(
+        max_digits=16, decimal_places=10, null=True, blank=True
+    )
+    confidence = models.DecimalField(max_digits=6, decimal_places=5)
+    created_at = models.DateTimeField(auto_now_add=True)
+    scored_at = models.DateTimeField(null=True, blank=True)
+    entry_date = models.DateField(null=True, blank=True)
+    exit_date = models.DateField(null=True, blank=True)
+    entry_price = models.DecimalField(
+        max_digits=15, decimal_places=4, null=True, blank=True
+    )
+    exit_price = models.DecimalField(
+        max_digits=15, decimal_places=4, null=True, blank=True
+    )
+    realized_return = models.DecimalField(
+        max_digits=16, decimal_places=10, null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stock", "model_key", "horizon", "signal_date"],
+                name="unique_prospective_stock_model_horizon_signal",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.stock.symbol} {self.model_key} "
+            f"{self.horizon}D from {self.signal_date}"
+        )

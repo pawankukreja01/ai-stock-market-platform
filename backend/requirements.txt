@@ -17,3 +17,6 @@ yfinance==1.7.0
 
 torch==2.14.1
 transformers==5.20.1
+# WSGI worker and static assets for containerized release candidates.
+gunicorn==23.0.0
+whitenoise==6.11.0

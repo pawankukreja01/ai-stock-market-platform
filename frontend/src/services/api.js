@@ -79,6 +79,13 @@ export const getResearchReadiness = async (symbols = "") => {
   return response.data;
 };
 
+export const getProspectiveResults = async (symbol = "") => {
+  const response = await api.get("/prospective-forecasts/results/", {
+    params: symbol ? { symbol } : {},
+  });
+  return response.data;
+};
+
 // HISTORICAL PRICES
 export const getHistoricalPrices = async (stockId, startDate, endDate) => {
   const response = await api.get("/historical-prices/", {

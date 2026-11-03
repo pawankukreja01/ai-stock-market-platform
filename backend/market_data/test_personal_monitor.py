@@ -102,3 +102,22 @@ class OneCycleMonitorTests(TestCase):
         call_command("monitor_market", symbols=["AAPL"], stdout=out)
         evaluate.assert_not_called()
         self.assertIn("1 stale/invalid", out.getvalue())
+
+    @patch("market_data.management.commands.monitor_market.call_command")
+    @patch("market_data.management.commands.monitor_market.fetch_latest_quote")
+    def test_rate_limit_stops_remaining_stocks_and_does_not_evaluate(
+        self, fetch, evaluate,
+    ):
+        from market_data.quote_service import QuoteProviderRateLimited
+        Stock.objects.create(
+            symbol="MSFT", company_name="Microsoft", exchange="NASDAQ",
+            is_active=True,
+        )
+        fetch.side_effect = QuoteProviderRateLimited("HTTP 429")
+        with self.assertRaisesRegex(CommandError, "rate limited"):
+            call_command(
+                "monitor_market", symbols=["AAPL", "MSFT"],
+                stdout=StringIO(), stderr=StringIO(),
+            )
+        fetch.assert_called_once()
+        evaluate.assert_not_called()

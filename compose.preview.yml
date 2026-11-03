@@ -1,0 +1,48 @@
+# Standalone isolated preview; does not mount or connect to the existing
+# ai_stock_market or marketpulse_restored_test databases.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: marketpulse_preview
+      POSTGRES_USER: marketpulse_preview
+      POSTGRES_PASSWORD: ${PREVIEW_DB_PASSWORD:?Set PREVIEW_DB_PASSWORD in preview.env}
+    volumes:
+      - preview_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketpulse_preview -d marketpulse_preview"]
+      interval: 5s
+      retries: 10
+    networks: [preview_private]
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      # This isolated localhost-only preview terminates HTTP, not HTTPS.
+      # DEBUG=true ensures Django's Secure cookies are not silently dropped
+      # during local login. Never use this preview configuration publicly.
+      DJANGO_DEBUG: "true"
+      DJANGO_SECRET_KEY: ${PREVIEW_DJANGO_SECRET_KEY:?Set PREVIEW_DJANGO_SECRET_KEY in preview.env}
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "http://localhost:8088,http://127.0.0.1:8088"
+      DB_NAME: marketpulse_preview
+      DB_USER: marketpulse_preview
+      DB_PASSWORD: ${PREVIEW_DB_PASSWORD:?Set PREVIEW_DB_PASSWORD in preview.env}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [preview_private]
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:8088:80"]
+    depends_on: [backend]
+    networks: [preview_private]
+volumes:
+  preview_postgres:
+networks:
+  preview_private:

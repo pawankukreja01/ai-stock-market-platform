@@ -85,3 +85,59 @@ class PersistentBenchmarkCacheTests(SimpleTestCase):
                 self.prices, "NASDAQ", cache_dir=self.cache_dir,
                 download_attempts=0,
             )
+
+    @patch("market_data.benchmark_data.time.sleep")
+    @patch("market_data.benchmark_data.yf.Ticker")
+    def test_rate_limit_stops_after_first_request_and_preserves_cache(
+        self, ticker_factory, sleep_mock,
+    ):
+        ticker_factory.return_value.history.side_effect = RuntimeError(
+            "HTTP 429 Too Many Requests"
+        )
+        result = fetch_benchmark_prices(
+            self.prices, "NASDAQ", cache_dir=self.cache_dir,
+            download_attempts=5, retry_delay_seconds=0.1,
+        )
+        self.assertTrue(result.empty)
+        self.assertEqual(result.attrs["status"], "provider_rate_limited")
+        self.assertEqual(ticker_factory.return_value.history.call_count, 1)
+        sleep_mock.assert_not_called()
+        self.assertFalse(list(self.cache_dir.glob("*.csv")))
+        self.assertFalse(list(self.cache_dir.glob("*.json")))
+
+    @patch("market_data.benchmark_data.time.sleep")
+    @patch("market_data.benchmark_data.yf.Ticker")
+    def test_strict_benchmark_mode_raises_immediately_after_429(
+        self, ticker_factory, sleep_mock,
+    ):
+        ticker_factory.return_value.history.side_effect = RuntimeError(
+            "HTTP 429 Too Many Requests"
+        )
+        with self.assertRaisesRegex(BenchmarkDataUnavailable, "rate limited"):
+            fetch_benchmark_prices(
+                self.prices, "NASDAQ", strict=True, cache_dir=self.cache_dir,
+                download_attempts=5, retry_delay_seconds=0.1,
+            )
+        self.assertEqual(ticker_factory.return_value.history.call_count, 1)
+        sleep_mock.assert_not_called()
+
+    @patch("market_data.benchmark_data.yf.Ticker")
+    def test_complete_cache_is_returned_during_provider_outage(
+        self, ticker_factory,
+    ):
+        ticker_factory.return_value.history.return_value = self.history
+        initial = fetch_benchmark_prices(
+            self.prices, "NASDAQ", cache_dir=self.cache_dir,
+            retry_delay_seconds=0,
+        )
+        ticker_factory.reset_mock()
+        ticker_factory.side_effect = AssertionError(
+            "Cached data must not trigger a fresh Yahoo request."
+        )
+        offline = fetch_benchmark_prices(
+            self.prices, "NASDAQ", cache_dir=self.cache_dir,
+            download_attempts=5, retry_delay_seconds=0,
+        )
+        self.assertEqual(offline.attrs["status"], "cache_hit")
+        self.assertEqual(offline.tolist(), initial.tolist())
+        ticker_factory.assert_not_called()
