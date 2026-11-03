@@ -402,8 +402,8 @@
               <tr>
                 <th>Metric</th>
                 <th>{{ symbol }}</th>
-                <th>S&P 500</th>
-                <th>NASDAQ-100</th>
+                <th>{{ benchmarkMetrics.primaryName }}</th>
+                <th>{{ benchmarkMetrics.secondaryName }}</th>
                 <th>
                   {{
                     benchmarkMetrics.sectorName
@@ -4034,7 +4034,8 @@ const loadBenchmarkData = async (
       await getBenchmarkComparison(
         startDate,
         endDate,
-        ""
+        "",
+        props.symbol.endsWith(".L") ? "LSE" : "NASDAQ"
       );
 
     if (
@@ -4120,9 +4121,11 @@ const loadBenchmarkData = async (
 
       sp500:
         sp500Metrics,
+      primaryName: sp500.name || "Primary benchmark",
 
       nasdaq100:
         nasdaqMetrics,
+      secondaryName: nasdaq100.name || "Secondary benchmark",
 
       sector:
         sectorMetrics,
@@ -4261,7 +4264,7 @@ const renderBenchmarkChart = async () => {
       y: sp500.values,
       type: "scatter",
       mode: "lines",
-      name: "S&P 500",
+      name: benchmarkMetrics.value.primaryName,
 
       line: {
         width: 2,
@@ -4269,7 +4272,7 @@ const renderBenchmarkChart = async () => {
       },
 
       hovertemplate:
-        "<b>S&P 500</b><br>" +
+        `<b>${benchmarkMetrics.value.primaryName}</b><br>` +
         "$10,000 Growth: $%{y:,.2f}" +
         "<extra></extra>",
     });
@@ -4283,7 +4286,7 @@ const renderBenchmarkChart = async () => {
       y: nasdaq100.values,
       type: "scatter",
       mode: "lines",
-      name: "NASDAQ-100",
+      name: benchmarkMetrics.value.secondaryName,
 
       line: {
         width: 2,
@@ -4291,7 +4294,7 @@ const renderBenchmarkChart = async () => {
       },
 
       hovertemplate:
-        "<b>NASDAQ-100</b><br>" +
+        `<b>${benchmarkMetrics.value.secondaryName}</b><br>` +
         "$10,000 Growth: $%{y:,.2f}" +
         "<extra></extra>",
     });
@@ -4977,13 +4980,13 @@ const renderRiskReturnChart = () => {
 
   if (benchmarkMetrics.value) {
     addPoint(
-      "S&P 500",
+      benchmarkMetrics.value.primaryName || "Market benchmark",
       benchmarkMetrics.value.sp500?.annualizedReturn,
       benchmarkMetrics.value.sp500?.annualizedVolatility
     );
 
     addPoint(
-      "NASDAQ-100",
+      benchmarkMetrics.value.secondaryName || "Secondary benchmark",
       benchmarkMetrics.value.nasdaq100?.annualizedReturn,
       benchmarkMetrics.value.nasdaq100?.annualizedVolatility
     );
