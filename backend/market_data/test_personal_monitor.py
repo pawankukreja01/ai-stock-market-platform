@@ -1,10 +1,13 @@
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import connection
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
@@ -46,10 +49,30 @@ class FreshnessTests(SimpleTestCase):
 
 class OneCycleMonitorTests(TestCase):
     def setUp(self):
+        # Tests use Django's isolated test DB, never the original database.
+        env_patch = patch.dict(
+            os.environ, {"DB_NAME": connection.settings_dict["NAME"]}
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
         self.stock = Stock.objects.create(
             symbol="AAPL", company_name="Apple", exchange="NASDAQ",
             is_active=True,
         )
+
+    def test_missing_explicit_db_name_is_rejected(self):
+        with patch.dict(os.environ, {"DB_NAME": ""}):
+            with self.assertRaisesRegex(CommandError, "explicit DB_NAME"):
+                call_command("monitor_market", symbols=["AAPL"])
+
+    def test_default_original_database_name_is_rejected(self):
+        with patch(
+            "market_data.management.commands.monitor_market.connection"
+        ) as conn:
+            conn.settings_dict = {"NAME": "ai_stock_market"}
+            with patch.dict(os.environ, {"DB_NAME": "ai_stock_market"}):
+                with self.assertRaisesRegex(CommandError, "protected"):
+                    call_command("monitor_market", symbols=["AAPL"])
 
     @patch("market_data.management.commands.monitor_market.call_command")
     @patch("market_data.management.commands.monitor_market.fetch_latest_quote")
