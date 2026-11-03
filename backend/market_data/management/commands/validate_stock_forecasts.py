@@ -23,6 +23,8 @@ from market_data.benchmark_data import (
 from ml_models import (
     create_linear_regression_model,
     create_random_forest_model,
+    create_conservative_random_forest_model,
+    create_zero_anchor_ridge_model,
     create_xgboost_model,
 )
 from walk_forward import generate_walk_forward_splits, describe_fold
@@ -34,6 +36,8 @@ from market_data.prediction_quality import assess_direction_bias
 MODEL_FACTORIES = {
     "linear_regression": create_linear_regression_model,
     "random_forest": create_random_forest_model,
+    "conservative_forest": create_conservative_random_forest_model,
+    "zero_anchor_ridge": create_zero_anchor_ridge_model,
     "xgboost": create_xgboost_model,
 }
 HORIZONS = (1, 5, 20, 60, 126, 252)
@@ -177,6 +181,14 @@ class Command(BaseCommand):
         )
         parser.add_argument("--min-train", type=int, default=500)
         parser.add_argument("--test-size", type=int, default=100)
+        parser.add_argument(
+            "--as-of", type=str, default=None,
+            help=(
+                "Optional inclusive YYYY-MM-DD cutoff for a reproducible "
+                "research dataset. Prevents later rows from entering the "
+                "evaluation. This does not by itself reserve a final holdout."
+            ),
+        )
         parser.add_argument("--output", type=str,
                             help="Optional destination for a JSON research report.")
 
@@ -192,6 +204,16 @@ class Command(BaseCommand):
                 "Test fold must contain at least horizon+2 origins."
             )
 
+        if opts.get("as_of"):
+            from django.utils.dateparse import parse_date
+            as_of = parse_date(opts["as_of"])
+            if as_of is None:
+                raise CommandError("--as-of must be a valid YYYY-MM-DD date.")
+            if as_of > timezone.localdate():
+                raise CommandError("--as-of may not be in the future.")
+        else:
+            as_of = timezone.localdate()
+
         symbols = opts["symbols"]
         if symbols:
             tickers = list(dict.fromkeys(s.strip().upper() for s in symbols if s.strip()))
@@ -204,7 +226,7 @@ class Command(BaseCommand):
         else:
             stocks = list(Stock.objects.filter(is_active=True).order_by("symbol")[:limit])
 
-        today = timezone.localdate()
+        today = as_of
         common_window = None
         if opts["common_window"]:
             bounds = [
@@ -231,7 +253,8 @@ class Command(BaseCommand):
             ),
             "protocol": "Expanding window, no shuffling, H+1-row train/test purge",
             "source": "stored MarketPulse database (no external downloads)",
-            "as_of": timezone.localdate().isoformat(),
+            "as_of": as_of.isoformat(),
+            "historical_window_role": "development_diagnostic_not_final_holdout",
             "model": opts["model"],
             "horizon_trading_days": horizon,
             "min_train": min_train,
