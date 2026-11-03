@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
 
@@ -268,7 +268,7 @@ class AlertAPITests(TestCase):
         LatestQuote.objects.create(
             stock=self.stock, price=Decimal("350.00"),
             currency="USD", quote_type="daily_close",
-            source_timestamp=timezone.now() - timezone.timedelta(days=3),
+            source_timestamp=timezone.now() - timedelta(days=3),
         )
         self.assertIsNone(
             get_observed_value(
