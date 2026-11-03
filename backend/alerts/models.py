@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -5,6 +6,12 @@ from stocks.models import Stock
 
 
 class AlertRule(models.Model):
+    # Legacy records are hidden until an administrator establishes ownership.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="marketpulse_alert_rules", null=True, blank=True,
+    )
+
     PRICE_ABOVE = "price_above"
     PRICE_BELOW = "price_below"
     SENTIMENT_ABOVE = "sentiment_above"
