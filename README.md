@@ -783,6 +783,23 @@ DB_NAME=marketpulse_restored_test python manage.py validate_stock_forecasts \\
   --feature-set market_aligned --common-window
 ```
 
+**Step 25.2 – Controlled regularization diagnostic:** The validator also
+supports two fixed, research-only candidates: `conservative_forest` (shallow
+trees with larger leaves) and `zero_anchor_ridge` (regularized linear model
+with no fitted intercept, shrinking toward zero rather than historical bullish
+bias). The live forecasting endpoints and default models are unchanged.
+
+Use `--as-of YYYY-MM-DD` to freeze a research window reproducibly. For
+example, try one candidate at a time with `--as-of 2026-06-30` and
+`--feature-set market_aligned` on AAPL, MSFT, NVDA and ABF.L, with the
+same `--min-train 500 --test-size 100 --horizon 5 --common-window`
+configuration as before. This is *not* a previously untouched final
+holdout: the older November 2026 results have already been inspected.
+Do not present retrospective model selection on that window as new
+independent out-of-sample confirmation. Future forward-collected
+observations or a pre-registered separate asset cohort are needed for
+a new final validation. Neither candidate is automatically selected.
+
 Run the price-only protocol separately to compare **feature groups**, not
 as evidence of deployable forecasting skill. Use fixed training procedures
 and a separately untouched final time window for any subsequent model
