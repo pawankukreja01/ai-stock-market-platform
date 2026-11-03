@@ -29,6 +29,14 @@ Never use this preview file to attach a production database.
    **without** `-v` to preserve preview data. To remove preview data
    deliberately, explicitly approve and inspect volume names first.
 
+**Local preview cookie behavior:** the loopback-only preview runs
+`DJANGO_DEBUG=true` so HTTP localhost login and CSRF cookies work without
+`Secure` cookie attributes. This is solely for isolated local acceptance,
+not a public or staging deployment setting. Any production or remotely
+accessible environment must instead set `DJANGO_DEBUG=false`, provide HTTPS
+and use secure session/CSRF cookies. The backend image itself collects static
+assets using production hashed-manifest settings.
+
 The frontend Nginx configuration keeps the Django API under a single origin,
 so session auth and CSRF avoid cross-origin cookie problems in the preview.
 Production user-uploaded media is **not** served by this stack (Nginx returns
