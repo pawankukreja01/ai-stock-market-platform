@@ -314,6 +314,20 @@ export const getCsrfToken = async () => {
   return csrfTokenPromise;
 };
 
+// Django session authentication requires CSRF protection for every write,
+// not just login and profile updates. GET requests (including the token
+// bootstrap endpoint) are deliberately excluded to avoid recursion.
+const csrfProtectedMethods = new Set(["post", "put", "patch", "delete"]);
+
+api.interceptors.request.use(async (config) => {
+  if (csrfProtectedMethods.has(String(config.method || "get").toLowerCase())) {
+    const token = await getCsrfToken();
+    config.headers.set("X-CSRFToken", token);
+  }
+
+  return config;
+});
+
 const authPost = async (url, payload = {}) => {
   const csrfToken = await getCsrfToken();
 
