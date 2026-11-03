@@ -161,14 +161,13 @@ class VerifiedLoginSessionTests(TestCase):
         )
 
     def test_forwarded_ip_spoofing_cannot_bypass_login_throttle(self):
-        with override_settings(REST_FRAMEWORK={
-            "NUM_PROXIES": 0,
-            "DEFAULT_THROTTLE_CLASSES": [],
-            "DEFAULT_THROTTLE_RATES": {"auth_login": "2/hour"},
-        }):
-            from accounts.auth_views import LoginRateThrottle
-            cache.clear()
-            self.assertEqual(LoginRateThrottle().num_requests, 2)
+        from accounts.auth_views import LoginRateThrottle
+
+        # Configure a low test rate on the actual throttle class so this
+        # regression measures the key's resistance to forged forwarding
+        # headers, independently of DRF's cached global rate settings.
+        cache.clear()
+        with patch.object(LoginRateThrottle, "get_rate", return_value="2/hour"):
             responses = [
                 self.client.post(
                     reverse("auth-login"),
