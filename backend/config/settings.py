@@ -38,10 +38,45 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Production frontend domain(s) can be supplied as comma-separated https:// origins.
 CSRF_TRUSTED_ORIGINS = [
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
+    origin.strip()
+    for origin in os.environ.get(
+        "DJANGO_CSRF_TRUSTED_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173" if DEBUG else "",
+    ).split(",")
+    if origin.strip()
 ]
+
+# HTTPS termination must be configured at the trusted reverse proxy.
+# Opt into proxy headers ONLY when the proxy strips client-supplied X-Forwarded-Proto.
+TRUST_PROXY_SSL = os.environ.get("DJANGO_TRUST_PROXY_SSL_HEADER", "false").lower() in {
+    "1", "true", "yes", "on"
+}
+if TRUST_PROXY_SSL:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_SSL_REDIRECT = (
+    not DEBUG
+    and os.environ.get("DJANGO_SECURE_SSL_REDIRECT", "false").lower()
+    in {"1", "true", "yes", "on"}
+)
+SECURE_HSTS_SECONDS = (
+    int(os.environ.get("DJANGO_HSTS_SECONDS", "0")) if not DEBUG else 0
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = (
+    not DEBUG
+    and os.environ.get("DJANGO_HSTS_INCLUDE_SUBDOMAINS", "false").lower()
+    in {"1", "true", "yes", "on"}
+)
+
 
 if not SECRET_KEY:
     if DEBUG:
@@ -190,6 +225,7 @@ USE_TZ = True
 # --------------------------------------------------
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_URL = "/media/"
 
