@@ -312,6 +312,11 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 # --------------------------------------------------
 
 REST_FRAMEWORK = {
+    # The first-party Vue app authenticates via Django sessions and CSRF,
+    # not HTTP Basic credentials sent with every request.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     # Never trust client-supplied X-Forwarded-For for rate-limit identity.
     # Behind a trusted proxy, configure this only after auditing its headers.
     "NUM_PROXIES": 0,
