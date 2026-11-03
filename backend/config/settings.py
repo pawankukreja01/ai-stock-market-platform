@@ -125,6 +125,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.session_security.ServerInactivityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -294,11 +295,13 @@ EMAIL_VERIFICATION_REQUIRED = (
 # Session security
 # --------------------------------------------------
 
-# Session expires after 30 minutes without a request.
-SESSION_COOKIE_AGE = 30 * 60
-
-# Refresh session expiry whenever a request is made.
-SESSION_SAVE_EVERY_REQUEST = True
+# Server tracks actual explicit user activity; passive API requests do NOT
+# renew the session. A second, absolute cap applies even when active.
+MARKETPULSE_IDLE_TIMEOUT_SECONDS = 30 * 60
+MARKETPULSE_ABSOLUTE_SESSION_SECONDS = 12 * 60 * 60
+SESSION_COOKIE_AGE = MARKETPULSE_IDLE_TIMEOUT_SECONDS
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_COOKIE_HTTPONLY = True
 
 # End the session when the browser is closed.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -312,6 +315,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         # Maximum five verification attempts per hour.
         "auth_verification": "5/hour",
+        "auth_login": "10/hour",
 
         # Maximum five password-reset requests per hour.
         "auth_password_reset": "5/hour",
