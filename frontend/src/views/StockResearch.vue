@@ -38,7 +38,7 @@
         <div class="hero-actions">
           <span class="catalog-badge">In stock catalogue</span>
           <button type="button" class="secondary-button" @click="refreshQuote" :disabled="quoteLoading">
-            {{ quoteLoading ? "Refreshing…" : "Refresh quote" }}
+            {{ quoteLoading ? "Refreshing…" : "Check stored quote" }}
           </button>
         </div>
       </header>
@@ -70,6 +70,11 @@
             <div><span>Provider</span><strong>{{ quote.provider || "Unavailable" }}</strong></div>
           </div>
           <p v-if="quote.data_note" class="data-note">{{ quote.data_note }}</p>
+          <p class="data-note">
+            Checks stored API quotes approximately every 60 seconds while this tab is visible.
+            Run the optional personal market monitor to update prices from yfinance.
+            This is not guaranteed exchange-real-time data.
+          </p>
         </template>
         <div v-else class="quote-state">No quote is currently available for {{ stock.symbol }}.</div>
       </section>
@@ -147,7 +152,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import StockPriceChart from "../components/charts/StockPriceChart.vue";
 import ExplainabilityPanel from "../components/ExplainabilityPanel.vue";
@@ -164,6 +169,8 @@ const pageError = ref("");
 const quoteError = ref("");
 const sentimentError = ref("");
 let activeRequest = 0;
+let quotePollTimer = null;
+const QUOTE_POLL_MS = 60_000;
 
 const symbol = computed(() => String(route.params.symbol || "").trim().toUpperCase());
 const marketLabel = computed(() => {
@@ -255,8 +262,28 @@ async function loadQuote(targetSymbol = symbol.value, requestId = activeRequest)
 }
 
 async function refreshQuote() {
+  if (quoteLoading.value) return;
   await loadQuote(symbol.value, activeRequest);
 }
+
+function refreshVisibleQuote() {
+  // Stored data polling does not itself fetch new Yahoo Finance quotes.
+  if (document.visibilityState !== "visible" || !stock.value || quoteLoading.value) {
+    return;
+  }
+  void loadQuote(symbol.value, activeRequest);
+}
+
+onMounted(() => {
+  quotePollTimer = window.setInterval(refreshVisibleQuote, QUOTE_POLL_MS);
+  document.addEventListener("visibilitychange", refreshVisibleQuote);
+});
+
+onBeforeUnmount(() => {
+  if (quotePollTimer !== null) window.clearInterval(quotePollTimer);
+  document.removeEventListener("visibilitychange", refreshVisibleQuote);
+  activeRequest += 1;
+});
 
 async function refreshSentiment() {
   // Do not pass the click event as a stock symbol. Always use the route symbol.
