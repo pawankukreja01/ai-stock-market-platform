@@ -71,6 +71,14 @@ export const getLatestQuote = async (symbol) => {
   return response.data;
 };
 
+// Authenticated, stored-data-only research readiness report.
+export const getResearchReadiness = async (symbols = "") => {
+  const response = await api.get("/research-readiness/", {
+    params: symbols ? { symbols } : {},
+  });
+  return response.data;
+};
+
 // HISTORICAL PRICES
 export const getHistoricalPrices = async (stockId, startDate, endDate) => {
   const response = await api.get("/historical-prices/", {
