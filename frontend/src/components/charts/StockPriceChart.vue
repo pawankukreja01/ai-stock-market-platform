@@ -1150,9 +1150,40 @@
           {{ formatMLDate(mlPrediction.historical_period?.end_date) }}.
         </div>
 
+        <div
+          v-if="mlPrediction.evidence"
+          class="ml-evidence-box"
+          :class="mlPrediction.evidence.status === 'limited_evidence' ? 'ml-evidence-warning' : 'ml-evidence-preliminary'"
+          role="status"
+        >
+          <strong>
+            {{ mlPrediction.evidence.status === "limited_evidence"
+              ? "Limited forecasting evidence"
+              : "Promising single-period holdout — not live-trading ready" }}
+          </strong>
+          <p>
+            Model held-out error: {{ formatMLPercentage(mlPrediction.evidence.model_mae) }}.
+            Zero-return baseline: {{ formatMLPercentage(mlPrediction.evidence.baselines?.zero_return?.mae) }}.
+            Historical-mean baseline: {{ formatMLPercentage(mlPrediction.evidence.baselines?.training_mean_return?.mae) }}.
+          </p>
+          <p>
+            Latest stored price: {{ formatMLDate(mlPrediction.evidence.latest_price_date) }}
+            ({{ mlPrediction.evidence.price_age_days }} calendar days old).
+            Approximate non-overlapping holdout windows:
+            {{ mlPrediction.evidence.approx_non_overlapping_holdout_windows }}.
+          </p>
+          <ul v-if="mlPrediction.evidence.warnings?.length">
+            <li v-for="warning in mlPrediction.evidence.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+          <p>
+            Predictions are experimental estimates, not probabilities of profit.
+            Passing this diagnostic is not proof of a profitable investment strategy.
+          </p>
+        </div>
+
         <div class="ml-prediction-main-grid">
           <div class="ml-prediction-primary-card">
-            <span class="ml-card-label">Expected Future Return</span>
+            <span class="ml-card-label">Experimental Future Return Estimate</span>
             <strong
               class="ml-primary-value"
               :class="returnValueClass(mlPredictionReturnPercentage)"
@@ -1182,14 +1213,14 @@
               {{ formatMLPrice(mlPrediction.prediction?.current_price) }}
             </strong>
             <span class="ml-card-help">
-              Latest stored closing price used to convert the return estimate into an illustrative price estimate.
+              Latest stored closing price, shown for context. The forecast assumes execution at the next session close, whose price is not yet known.
             </span>
           </div>
         </div>
 
         <div class="ml-prediction-grid">
           <div class="ml-prediction-item">
-            <span>Illustrative Price Estimate</span>
+            <span>Future Price Estimate (not supported)</span>
             <strong>{{ formatMLPrice(mlPrediction.prediction?.estimated_price) }}</strong>
           </div>
 
@@ -7488,6 +7519,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.ml-evidence-box {
+  margin: 16px 0;
+  padding: 14px 17px;
+  border: 1px solid #b9c9ec;
+  border-radius: 12px;
+  background: #f7faff;
+  color: #1e365a;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ml-evidence-warning { border-color: #f1c29b; background: #fff9f0; color: #734818; }
+.ml-evidence-box p { margin: 8px 0 0; }
+.ml-evidence-box ul { margin: 9px 0 0; padding-left: 20px; }
+
 .chart-card {
   margin-top: 30px;
   background: white;
