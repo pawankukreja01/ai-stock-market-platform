@@ -705,6 +705,29 @@ For one-symbol ingestion where a provider permits the intended use, see
 Back up the working database before running any ingestion, and review provider
 rate limits, exchange entitlements, timestamps, and adjustment policies.
 
+### Repeatable multi-stock forecasting study
+
+Use the restored database to compare one ML model against three simple
+baselines across multiple symbols and expanding walk-forward folds. The
+command reads stored prices only, without downloading new quotes or changing
+any tables:
+
+```bash
+cd backend
+DB_NAME=marketpulse_restored_test python manage.py validate_stock_forecasts \\
+  --symbols AAPL MSFT GOOGL AMZN NVDA \\
+  --model random_forest --horizon 5 --min-train 500 --test-size 100 \\
+  --output ~/Desktop/marketpulse_walk_forward_5d.json
+```
+
+The output file is optional; existing report files are **not overwritten**.
+Run this separately for the competing models and horizons; record exceptions,
+failed baselines, fold-to-fold variation and excluded stocks. The command
+does **not** include dynamically retrieved benchmark features, cross-sectional
+portfolio allocation, survivorship correction, or realistic trading costs.
+Never select the best-performing model and cite those same test dates as an
+unbiased final validation; reserve new forward dates for confirmation.
+
 ### Requirements before a real public market launch
 
 1. Run a multi-market, multi-stock **purged walk-forward study** of all candidate
