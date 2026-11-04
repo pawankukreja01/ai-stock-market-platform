@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from .recommendation_serializers import RecommendationRequestSerializer
 from .recommendation_engine import recommend_stocks
 from .recommendation_allocation import allocate_whole_shares
+from .recommendation_diversification import allocate_diversified_shares
 
 
 class StockRecommendationsView(APIView):
@@ -39,12 +40,22 @@ class StockRecommendationsView(APIView):
             horizon_months=params["horizon_months"],
         )
 
-        allocation = allocate_whole_shares(
-            result.get("results", []),
-            budget=params["budget"],
-            currency=params["currency"],
-            max_allocations=min(params["max_candidates"], 100),
-        )
+        allocation_options = {
+            "budget": params["budget"],
+            "currency": params["currency"],
+            "max_allocations": min(params["max_candidates"], 100),
+        }
+        if params["allocation_method"] == "diversified":
+            allocation = allocate_diversified_shares(
+                result.get("results", []),
+                risk_tolerance=params["risk_tolerance"],
+                **allocation_options,
+            )
+        else:
+            allocation = allocate_whole_shares(
+                result.get("results", []), **allocation_options
+            )
+            allocation["method"] = "legacy_rank_first"
 
         response_data = dict(result)
         if not result.get("results"):
@@ -77,6 +88,7 @@ class StockRecommendationsView(APIView):
             "horizon_months": params["horizon_months"],
             "market": params.get("market"),
             "max_candidates": params["max_candidates"],
+            "allocation_method": params["allocation_method"],
         }
 
         response_data["limitations"] = [
@@ -89,7 +101,7 @@ class StockRecommendationsView(APIView):
             "Allocations are illustrative and are not executable orders or a guarantee of execution at the displayed prices.",
             "Allocation does not account for brokerage fees, transaction costs, taxes, bid-ask spreads, slippage, or settlement restrictions.",
             "The allocation process does not consider existing holdings, liabilities, emergency savings, or other personal financial circumstances.",
-            "The budget is allocated using a simple ranking-based method; portfolio diversification and sector or concentration limits are not enforced.",
+            "Diversified paper allocation uses fixed position and sector concentration caps; this is not an optimized or personalized portfolio. Legacy rank-first allocation can be selected explicitly.",
             "Investment horizon adjusts provisional momentum/fundamental scoring weights. These heuristic adjustments have not yet been validated for predictive performance or investor suitability.",
             "Risk tolerance changes scoring weights but does not constitute a complete assessment of an investor's risk capacity or financial circumstances.",
             "Forecasts are not included in the recommendation scoring model.",
