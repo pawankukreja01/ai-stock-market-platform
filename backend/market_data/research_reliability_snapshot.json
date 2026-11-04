@@ -1,0 +1,225 @@
+{
+  "snapshot_id": "historical-5d-2026-11-02",
+  "as_of": "2026-11-02",
+  "kind": "historical_research_snapshot",
+  "dataset_role": "development_diagnostic_not_independent_holdout",
+  "dataset": "separate local restored research database, not Docker preview",
+  "horizon": 5,
+  "target": "next observed session close through the H-session exit, unadjusted prices",
+  "live_model": "random_forest",
+  "promotion_approved": false,
+  "uncertainty_coverage": null,
+  "uncertainty_note": "This historical multi-fold report does not contain verified interval calibration or prospective performance. Coverage is not measured.",
+  "excludes": [
+    "dividends",
+    "transaction costs",
+    "slippage",
+    "taxes"
+  ],
+  "stocks": [
+    {
+      "symbol": "AAPL",
+      "folds": 17,
+      "oos_observations": 1700,
+      "baseline": {
+        "name": "historical_mean",
+        "mae_percent": 3.11896
+      },
+      "models": [
+        {
+          "key": "random_forest",
+          "mae_percent": 3.22713,
+          "rmse_percent": 4.25473,
+          "balanced_directional_accuracy_percent": 48.516,
+          "negative_specificity_percent": 15.884,
+          "predicted_positive_percent": 82.412,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.10817
+        },
+        {
+          "key": "conservative_forest",
+          "mae_percent": 3.14686,
+          "rmse_percent": 4.15185,
+          "balanced_directional_accuracy_percent": 48.145,
+          "negative_specificity_percent": 7.459,
+          "predicted_positive_percent": 90.412,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.0279
+        },
+        {
+          "key": "zero_anchor_ridge",
+          "mae_percent": 3.26275,
+          "rmse_percent": 4.26466,
+          "balanced_directional_accuracy_percent": 49.629,
+          "negative_specificity_percent": 63.398,
+          "predicted_positive_percent": 36.176,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.14379
+        },
+        {
+          "key": "xgboost",
+          "mae_percent": 3.6063,
+          "rmse_percent": 4.73813,
+          "balanced_directional_accuracy_percent": 49.289,
+          "negative_specificity_percent": 41.713,
+          "predicted_positive_percent": 57.471,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.48734
+        }
+      ]
+    },
+    {
+      "symbol": "ABF.L",
+      "folds": 5,
+      "oos_observations": 500,
+      "baseline": {
+        "name": "zero_return",
+        "mae_percent": 2.53573
+      },
+      "models": [
+        {
+          "key": "random_forest",
+          "mae_percent": 2.8846,
+          "rmse_percent": 3.93998,
+          "balanced_directional_accuracy_percent": 50.456,
+          "negative_specificity_percent": 18.672,
+          "predicted_positive_percent": 81.8,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.34887
+        },
+        {
+          "key": "conservative_forest",
+          "mae_percent": 2.72495,
+          "rmse_percent": 3.74844,
+          "balanced_directional_accuracy_percent": 48.923,
+          "negative_specificity_percent": 7.884,
+          "predicted_positive_percent": 91,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.18922
+        },
+        {
+          "key": "zero_anchor_ridge",
+          "mae_percent": 2.71555,
+          "rmse_percent": 3.70651,
+          "balanced_directional_accuracy_percent": 50.557,
+          "negative_specificity_percent": 21.577,
+          "predicted_positive_percent": 79,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.17982
+        },
+        {
+          "key": "xgboost",
+          "mae_percent": 3.25069,
+          "rmse_percent": 4.42285,
+          "balanced_directional_accuracy_percent": 51.54,
+          "negative_specificity_percent": 33.195,
+          "predicted_positive_percent": 68.4,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.71496
+        }
+      ]
+    },
+    {
+      "symbol": "MSFT",
+      "folds": 5,
+      "oos_observations": 500,
+      "baseline": {
+        "name": "zero_return",
+        "mae_percent": 2.98692
+      },
+      "models": [
+        {
+          "key": "random_forest",
+          "mae_percent": 3.13163,
+          "rmse_percent": 4.57863,
+          "balanced_directional_accuracy_percent": 50.545,
+          "negative_specificity_percent": 12,
+          "predicted_positive_percent": 88.6,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.14471
+        },
+        {
+          "key": "conservative_forest",
+          "mae_percent": 3.0468,
+          "rmse_percent": 4.43492,
+          "balanced_directional_accuracy_percent": 49.737,
+          "negative_specificity_percent": 3.111,
+          "predicted_positive_percent": 96.6,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.05988
+        },
+        {
+          "key": "zero_anchor_ridge",
+          "mae_percent": 3.0582,
+          "rmse_percent": 4.4001,
+          "balanced_directional_accuracy_percent": 50.303,
+          "negative_specificity_percent": 37.333,
+          "predicted_positive_percent": 63,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.07128
+        },
+        {
+          "key": "xgboost",
+          "mae_percent": 3.38857,
+          "rmse_percent": 4.87902,
+          "balanced_directional_accuracy_percent": 51.354,
+          "negative_specificity_percent": 24.889,
+          "predicted_positive_percent": 76.6,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.40165
+        }
+      ]
+    },
+    {
+      "symbol": "NVDA",
+      "folds": 5,
+      "oos_observations": 500,
+      "baseline": {
+        "name": "zero_return",
+        "mae_percent": 4.44915
+      },
+      "models": [
+        {
+          "key": "random_forest",
+          "mae_percent": 4.84427,
+          "rmse_percent": 6.27907,
+          "balanced_directional_accuracy_percent": 49.915,
+          "negative_specificity_percent": 0.905,
+          "predicted_positive_percent": 99,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.39512
+        },
+        {
+          "key": "conservative_forest",
+          "mae_percent": 4.60172,
+          "rmse_percent": 6.01377,
+          "balanced_directional_accuracy_percent": 50,
+          "negative_specificity_percent": 0,
+          "predicted_positive_percent": 100,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.15257
+        },
+        {
+          "key": "zero_anchor_ridge",
+          "mae_percent": 4.41811,
+          "rmse_percent": 5.71222,
+          "balanced_directional_accuracy_percent": 54.076,
+          "negative_specificity_percent": 27.149,
+          "predicted_positive_percent": 77.4,
+          "beats_all_baselines": true,
+          "improvement_vs_best_baseline_pp": 0.03104
+        },
+        {
+          "key": "xgboost",
+          "mae_percent": 5.40368,
+          "rmse_percent": 7.0437,
+          "balanced_directional_accuracy_percent": 55.114,
+          "negative_specificity_percent": 28.507,
+          "predicted_positive_percent": 77.2,
+          "beats_all_baselines": false,
+          "improvement_vs_best_baseline_pp": -0.95453
+        }
+      ]
+    }
+  ]
+}
