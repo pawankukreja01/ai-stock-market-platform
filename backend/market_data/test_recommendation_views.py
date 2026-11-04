@@ -128,8 +128,10 @@ class StockRecommendationsViewTests(APITestCase):
 
         self.assertEqual(allocation["currency"], "USD")
         self.assertEqual(allocation["budget"], "1000.00")
-        self.assertEqual(allocation["invested"], "1000.00")
-        self.assertEqual(allocation["remaining_cash"], "0.00")
+        self.assertEqual(allocation["method"], "diversified_caps_v1")
+        self.assertEqual(allocation["position_cap_percent"], 25)
+        self.assertEqual(allocation["invested"], "200.00")
+        self.assertEqual(allocation["remaining_cash"], "800.00")
         self.assertFalse(allocation["fractional_shares_used"])
         self.assertEqual(allocation["excluded"], [])
 
@@ -137,10 +139,39 @@ class StockRecommendationsViewTests(APITestCase):
 
         item = allocation["allocations"][0]
         self.assertEqual(item["symbol"], "AAA")
-        self.assertEqual(item["shares"], 10)
+        self.assertEqual(item["shares"], 2)
         self.assertEqual(item["latest_price"], "100.00")
-        self.assertEqual(item["estimated_cost"], "1000.00")
+        self.assertEqual(item["estimated_cost"], "200.00")
         self.assertEqual(item["rank"], 1)
+
+    @patch("market_data.recommendation_views.recommend_stocks")
+    def test_explicit_legacy_rank_first_keeps_existing_behavior(self, mock_recommend):
+        mock_recommend.return_value = {
+            "risk_tolerance": "moderate",
+            "candidate_universe_size": 1,
+            "eligible_candidate_count": 1,
+            "scored_candidate_count": 1,
+            "scoring_weights": {},
+            "forecast_included": False,
+            "results": [{
+                "symbol": "AAA", "company_name": "Example A",
+                "exchange": "NASDAQ", "currency": "USD",
+                "latest_price": "100.00", "rank": 1, "score": 90,
+            }],
+            "disclaimer": "Research rankings only.",
+        }
+        params = self.valid_params()
+        params["allocation_method"] = "rank_first"
+        response = self.client.get(self.url, params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["allocation"]["method"], "legacy_rank_first")
+        self.assertEqual(response.data["allocation"]["allocations"][0]["shares"], 10)
+
+    def test_invalid_allocation_method_is_rejected(self):
+        params = self.valid_params()
+        params["allocation_method"] = "unbounded"
+        response = self.client.get(self.url, params)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch("market_data.recommendation_views.recommend_stocks")
     def test_mismatched_currency_is_excluded(self, mock_recommend):

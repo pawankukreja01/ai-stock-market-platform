@@ -104,6 +104,14 @@
           </select>
         </div>
 
+        <div class="field">
+          <label for="allocation-method">Illustrative allocation approach</label>
+          <select id="allocation-method" v-model="form.allocation_method">
+            <option value="diversified">Diversified — cap stock and sector exposure</option>
+            <option value="rank_first">Legacy ranking-first — concentration risk</option>
+          </select>
+        </div>
+
         <div class="form-actions">
           <button class="primary-button" type="submit" :disabled="loading">
             {{ loading ? "Calculating…" : "Generate recommendations" }}
@@ -157,7 +165,8 @@
             <h2>Ranked stocks</h2>
             <p>
               Showing {{ data.results?.length ?? 0 }} stocks.
-              Scores are relative percentiles, not probabilities of profit. Your selected horizon adjusts provisional scoring weights.
+              Scores are relative research percentiles, not probabilities of profit or validated forecast accuracy.
+              Prices must pass a seven-day freshness gate. Research as-of: {{ data.data_as_of || "unknown" }}.
             </p>
           </div>
           <span class="pill">{{ data.risk_tolerance }} risk profile</span>
@@ -187,6 +196,7 @@
                 <th>Sector</th>
                 <th>Latest price</th>
                 <th>Score</th>
+                <th>Evidence coverage</th>
                 <th>Data availability</th>
               </tr>
             </thead>
@@ -218,6 +228,16 @@
                   </div>
                 </td>
                 <td>
+                  <strong>{{ stock.evidence?.percentage ?? 0 }}%</strong>
+                  <span class="company-name">
+                    {{ stock.evidence?.available_components ?? 0 }} of
+                    {{ stock.evidence?.total_components ?? 5 }} research components
+                  </span>
+                  <span class="company-name">
+                    Source coverage only — not model confidence.
+                  </span>
+                </td>
+                <td>
                   <span
                     class="data-status"
                     :class="stock.data_quality?.fundamental_data_available
@@ -246,6 +266,13 @@
                         <dd>{{ value == null ? "Unavailable" : number(value) }}</dd>
                       </template>
                     </dl>
+                    <strong>Research warnings</strong>
+                    <ul v-if="stock.research_warnings?.length">
+                      <li v-for="(warning, index) in stock.research_warnings" :key="'warning-'+index">
+                        {{ warning }}
+                      </li>
+                    </ul>
+                    <p v-else>No additional coverage warnings for this stock.</p>
                     <ul>
                       <li
                         v-for="(explanation, index) in stock.explanations"
@@ -267,8 +294,10 @@
           <div>
             <h2>Illustrative allocation</h2>
             <p>
-              Ranking-first allocation using whole shares. This is not an
-              executable order.
+              {{ data.allocation?.method === "diversified_caps_v1"
+                ? "Diversified whole-share paper allocation with fixed exposure caps."
+                : "Legacy rank-first whole-share paper allocation; high concentration risk." }}
+              This is not an executable order or personalized allocation.
             </p>
           </div>
           <span class="pill">
@@ -278,6 +307,12 @@
           </span>
         </div>
 
+        <p v-if="data.allocation?.method === 'diversified_caps_v1'" class="forecast-note">
+          Position limit: {{ data.allocation.position_cap_percent }}% of budget;
+          sector limit: {{ data.allocation.sector_cap_percent }}% of budget.
+          Uninvested cash may remain when a whole share exceeds these limits.
+          These limits are illustrative policies, not optimized allocations.
+        </p>
         <div class="allocation-summary">
           <div>
             <span>Budget</span>
@@ -307,6 +342,7 @@
                 <th>Price per share</th>
                 <th>Estimated cost</th>
                 <th>Score</th>
+                <th>% of budget</th>
               </tr>
             </thead>
             <tbody>
@@ -323,6 +359,7 @@
                 <td>{{ money(item.latest_price, item.currency) }}</td>
                 <td>{{ money(item.estimated_cost, item.currency) }}</td>
                 <td>{{ number(item.score) }}</td>
+                <td>{{ item.share_of_budget_percent == null ? "—" : item.share_of_budget_percent.toFixed(2) + "%" }}</td>
               </tr>
             </tbody>
           </table>
@@ -395,6 +432,7 @@ const form = reactive({
   horizon_months: 12,
   market: "NASDAQ",
   max_candidates: 10,
+  allocation_method: "diversified",
 });
 
 const data = ref(null);
@@ -466,6 +504,7 @@ async function loadRecommendations() {
       horizon_months: form.horizon_months,
       market: form.market,
       max_candidates: form.max_candidates,
+      allocation_method: form.allocation_method,
     });
   } catch (err) {
     console.error("Failed to load stock recommendations:", err);
