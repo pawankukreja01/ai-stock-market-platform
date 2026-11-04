@@ -87,6 +87,12 @@ export const getProspectiveResults = async (symbol = "") => {
   return response.data;
 };
 
+// Authenticated, stored-data-only snapshot readiness. No providers contacted.
+export const getMarketDataCoverage = async () => {
+  const response = await api.get("/market-data-coverage/");
+  return response.data;
+};
+
 // HISTORICAL PRICES
 export const getHistoricalPrices = async (stockId, startDate, endDate) => {
   const response = await api.get("/historical-prices/", {
