@@ -63,6 +63,15 @@ class FrozenCandidateProtocolTests(SimpleTestCase):
         self.assertEqual(set(result["baselines"]),
                          {"zero_return", "historical_mean", "momentum"})
 
+    def test_recovered_original_33_stock_manifest_is_immutable(self):
+        manifest = Path(__file__).parent / "research_cohorts" / "raw_adjusted_33_stock_v1.json"
+        symbols, digest = load_locked_cohort(manifest)
+        self.assertEqual(len(symbols), 33)
+        self.assertEqual(digest,
+                         "8ceac6b8b1d1ada47a719f97ab29c398696d1b28211c27523e7d963d4739e345")
+        self.assertEqual(symbols[:5], ["AAPL", "AMD", "AMT", "BP.L", "BT-A.L"])
+        self.assertEqual(symbols[-5:], ["SVT.L", "TGT", "TSCO.L", "TSLA", "VZ"])
+
     def test_original_cohort_file_must_contain_33_distinct_symbols(self):
         with TemporaryDirectory() as d:
             path = Path(d) / "cohort.json"
