@@ -333,8 +333,17 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
             "percentage": int(evidence_count / 5 * 100),
             "price_age_days": record.get("price_age_days"),
             "risk_observations": record.get("risk", {}).get("risk_observations"),
-            "has_fundamentals": coverage.get("fundamental_data_available", False),
-            "sentiment_articles": coverage.get("sentiment_articles", 0),
+            "has_fundamentals": coverage.get(
+                "fundamental_data_available",
+                any(
+                    value is not None
+                    for value in record.get("fundamentals", {}).values()
+                ),
+            ),
+            "sentiment_articles": coverage.get(
+                "sentiment_articles",
+                record.get("sentiment", {}).get("sentiment_articles", 0),
+            ),
             "note": "Source coverage, not predicted-return confidence or accuracy.",
         }
         warnings = []
