@@ -13,7 +13,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from market_data.preview_snapshot import (
     FIELDS, SCHEMA, SOURCE_DB, _valid_record,
-    assert_database, import_snapshot, preflight_snapshot,
+    assert_database, export_snapshot, import_snapshot, preflight_snapshot,
 )
 from market_data.models import HistoricalPrice
 from market_data.quote_views import LatestQuoteView
@@ -85,6 +85,37 @@ class OfflinePreviewSnapshotTests(SimpleTestCase):
     def test_cannot_export_from_original_database(self):
         with self.assertRaisesRegex(CommandError, "Refusing market-data operation"):
             assert_database(SOURCE_DB)
+
+
+class MarketSnapshotRoundTripTests(TestCase):
+    def test_offline_export_import_is_idempotent_and_no_accounts_copied(self):
+        stock = Stock.objects.create(
+            symbol="AAPL", company_name="Apple Inc.",
+            exchange="NASDAQ", currency="USD", is_active=True,
+        )
+        HistoricalPrice.objects.create(
+            stock=stock, date=date(2024, 1, 3),
+            open_price=Decimal("100"), high_price=Decimal("102"),
+            low_price=Decimal("99"), close_price=Decimal("101"),
+            adjusted_close=Decimal("101"), volume=1234,
+            is_ohlc_valid=True, is_volume_valid=True,
+            storage_currency="USD", provider_currency="USD",
+        )
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "archive.jsonl.gz"
+            with patch("market_data.preview_snapshot.assert_database"):
+                exported, export_counts = export_snapshot(path)
+                self.assertEqual(exported, path)
+                self.assertEqual(export_counts["stock"], 1)
+                self.assertEqual(export_counts["price"], 1)
+                counts, new_rows = import_snapshot(path)
+                self.assertEqual(counts["price"], 1)
+                self.assertEqual(new_rows["price"], 0)
+                self.assertEqual(new_rows["stock"], 0)
+                counts_again, repeat_rows = import_snapshot(path)
+                self.assertEqual(repeat_rows["price"], 0)
+                self.assertEqual(repeat_rows["stock"], 0)
+            self.assertEqual(HistoricalPrice.objects.count(), 1)
 
 
 class ArchivedQuoteTests(TestCase):
