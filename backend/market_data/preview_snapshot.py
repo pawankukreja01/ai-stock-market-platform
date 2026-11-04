@@ -195,6 +195,7 @@ def import_snapshot(path, *, dry_run=False):
         initial_rows = {kind: model.objects.count() for kind, model in models.items()}
         # Never delete existing preview data, or overwrite a newer observation.
         symbols = {}
+        missing_currency_symbols = set()
         buffer = []
         current_kind = None
 
@@ -212,12 +213,27 @@ def import_snapshot(path, *, dry_run=False):
                 continue
             if kind == "stock":
                 obj, made = Stock.objects.get_or_create(symbol=symbol, defaults=fields)
+                # The starter catalogue has nullable currencies. Restore only
+                # sourced major ISO currency on previously-unset preview stocks.
+                if not obj.currency and fields.get("currency") in {"USD", "GBP"}:
+                    Stock.objects.filter(pk=obj.pk, currency__isnull=True).update(
+                        currency=fields["currency"]
+                    )
                 symbols[symbol] = obj.pk
+                if not obj.currency and fields.get("currency") not in {"USD", "GBP"}:
+                    missing_currency_symbols.add(symbol)
                 created["stock"] += int(made)
                 continue
             if current_kind != kind:
                 flush()
                 current_kind = kind
+            if kind == "price" and symbol in missing_currency_symbols:
+                verified_currency = fields.get("storage_currency")
+                if verified_currency in {"USD", "GBP"}:
+                    Stock.objects.filter(pk=symbols[symbol], currency__isnull=True).update(
+                        currency=verified_currency
+                    )
+                    missing_currency_symbols.remove(symbol)
             data = dict(fields, stock_id=symbols[symbol])
             buffer.append({"price": HistoricalPrice,
                            "fundamental": Fundamental, "news": NewsArticle}[kind](**data))
