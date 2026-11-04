@@ -8,10 +8,9 @@ import pandas as pd
 
 from .models import Fundamental, HistoricalPrice, NewsArticle
 from .risk_engine import calculate_risk_metrics
+from django.db.models import F
 from .screener_views import (
     as_float,
-    latest_fundamental,
-    sentiment_metrics,
     technical_metrics,
 )
 
@@ -34,9 +33,24 @@ def _safe_float(value):
     return result if math.isfinite(result) else None
 
 
-def _fundamental_features(stock):
-    """Extract available metrics from the latest stored fundamental."""
-    fundamental = latest_fundamental(stock)
+def _fundamental_features(stock, *, as_of):
+    """Only use records known to MarketPulse by the research cutoff.
+
+    Period end is NOT a filing/publication timestamp. Both period end and
+    actual ingestion timestamp must precede the cutoff. Imported backfilled
+    records will not be incorrectly used in older historical evaluations.
+    """
+    fundamental = (
+        Fundamental.objects.filter(
+            stock=stock,
+            period_end__isnull=False,
+            period_end__lte=as_of,
+            created_at__isnull=False,
+            created_at__date__lte=as_of,
+        )
+        .order_by(F("period_end").desc(nulls_last=True), "-pk")
+        .first()
+    )
 
     if fundamental is None:
         return {
@@ -149,6 +163,36 @@ def _historical_risk_features(stock, as_of=None):
     }
 
 
+def _sentiment_features(stock, *, as_of):
+    """Only use previously published, retrieved AND analyzed sentiment.
+
+    Archived articles retrieved or analyzed after as_of cannot count as
+    point-in-time evidence, even if their publication date was earlier.
+    This deliberately excludes ambiguous timestamp provenance.
+    """
+    scores = list(
+        NewsArticle.objects.filter(
+            stock=stock,
+            published_at__isnull=False,
+            published_at__date__lte=as_of,
+            retrieved_at__date__lte=as_of,
+            sentiment_analyzed_at__isnull=False,
+            sentiment_analyzed_at__date__lte=as_of,
+            sentiment_score__isnull=False,
+        )
+        .order_by(F("published_at").desc(nulls_last=True), "-pk")
+        .values_list("sentiment_score", flat=True)[:50]
+    )
+    valid = [_safe_float(value) for value in scores]
+    valid = [value for value in valid if value is not None]
+    return {
+        "sentiment_score": (
+            round(sum(valid) / len(valid), 6) if valid else None
+        ),
+        "sentiment_articles": len(valid),
+    }
+
+
 def extract_candidate_features(stock, *, as_of=None):
     """
     Return stored technical, fundamental, sentiment and risk evidence.
@@ -159,8 +203,8 @@ def extract_candidate_features(stock, *, as_of=None):
     as_of = as_of or date.today()
 
     technical = technical_metrics(stock, as_of=as_of)
-    fundamentals = _fundamental_features(stock)
-    sentiment = sentiment_metrics(stock)
+    fundamentals = _fundamental_features(stock, as_of=as_of)
+    sentiment = _sentiment_features(stock, as_of=as_of)
     risk = _historical_risk_features(stock, as_of=as_of)
 
     price = _safe_float(technical.get("price"))
@@ -216,6 +260,12 @@ def extract_candidate_features(stock, *, as_of=None):
         "sentiment": sentiment,
         "risk": risk,
         "data_quality": {
+            "evidence_cutoff_date": as_of.isoformat(),
+            "source_timing_note": (
+                "Archived filings/news without verifiable timestamps before "
+                "the cutoff were excluded; original filing dates may be "
+                "unavailable, so this is not a certified point-in-time feed."
+            ),
             "price_available": price is not None and price > 0,
             "technical_data_available": bool(
                 technical.get("technical_data_available")
