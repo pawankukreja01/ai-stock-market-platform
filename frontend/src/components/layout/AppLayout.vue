@@ -65,6 +65,13 @@
         </router-link>
 
         <router-link
+          to="/forecast-reliability"
+          exact-active-class="router-link-exact-active"
+        >
+          Model Reliability
+        </router-link>
+
+        <router-link
           to="/research-health"
           exact-active-class="router-link-exact-active"
         >

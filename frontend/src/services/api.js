@@ -80,6 +80,12 @@ export const getResearchReadiness = async (symbols = "") => {
 };
 
 
+// Versioned historical diagnostic only; it is not the latest market forecast.
+export const getForecastReliability = async () => {
+  const response = await api.get("/forecast-reliability/");
+  return response.data;
+};
+
 export const getProspectiveResults = async (symbol = "") => {
   const response = await api.get("/prospective-forecasts/results/", {
     params: symbol ? { symbol } : {},
