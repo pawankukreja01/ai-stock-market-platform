@@ -94,6 +94,20 @@ class HistoricalReliabilityTests(SimpleTestCase):
             ["zero_anchor_ridge"],
         )
 
+    def test_uploaded_ablation_is_marked_development_only(self):
+        report = load_reliability_snapshot()
+        result = report["pipeline_diagnostics"]
+        self.assertEqual(result["candidates_evaluated"], 72)
+        self.assertEqual(result["beat_all_baselines"], 15)
+        self.assertEqual(result["beating_stocks"], ["NVDA"])
+        self.assertEqual(result["dataset_role"],
+                         "development_diagnostic_not_independent_holdout")
+        self.assertIsNone(result["historical_uncertainty_coverage"])
+        self.assertEqual(len(result["stock_comparisons"]), 4)
+        for item in result["stock_comparisons"]:
+            self.assertLess(item["alpha1000_mae_percent"],
+                            item["alpha100_mae_percent"])
+
     def test_unauthenticated_request_denied(self):
         response = ForecastReliabilityView.as_view()(
             APIRequestFactory().get("/api/forecast-reliability/")
