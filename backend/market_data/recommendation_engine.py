@@ -412,7 +412,8 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
 
 
 def recommend_stocks(*, risk_tolerance="moderate", market=None,
-                     max_candidates=20, horizon_months=12, as_of=None):
+                     max_candidates=20, horizon_months=12, as_of=None,
+                     symbols=None):
     """
     Extract features for all active stocks with recent stored prices,
     then rank the eligible universe. max_candidates limits the response,
@@ -443,6 +444,14 @@ def recommend_stocks(*, risk_tolerance="moderate", market=None,
 
     if market:
         queryset = queryset.filter(exchange__iexact=market.strip())
+    if symbols is not None:
+        # Research-only explicit cohort filter. No limit or future-data
+        # filtering is performed using information after as_of.
+        if not isinstance(symbols, (list, tuple)) or not symbols:
+            raise ValueError("Explicit research cohort must be a nonempty list.")
+        if any(not isinstance(v, str) or not v.strip() for v in symbols):
+            raise ValueError("Invalid research cohort symbol.")
+        queryset = queryset.filter(symbol__in=symbols)
 
     features = []
 

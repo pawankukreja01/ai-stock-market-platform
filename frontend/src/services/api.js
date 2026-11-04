@@ -474,6 +474,12 @@ export const logoutUser = async () => {
  */
 
 
+// Versioned historical diagnostics; this does not represent today's investment accuracy.
+export const getRankingEvidence = async () => {
+  const response = await api.get("/ranking-evidence/");
+  return response.data;
+};
+
 export const getStockRecommendations = async ({
   budget,
   currency = "USD",
