@@ -43,8 +43,8 @@ test("authenticated forecast scorecard shows no fabricated performance", async (
   await page.getByLabel("Password", { exact: true }).fill(process.env.MARKETPULSE_E2E_PASSWORD);
   await page.getByRole("button", { name: "Sign in securely" }).click();
   await page.goto("/forecast-performance");
-  await expect(page.getByText("Research accountability", { exact: false })).toBeVisible();
-  await expect(page.getByText("zero-return baseline", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prospective forecast performance" })).toBeVisible();
+  await expect(page.getByText("Zero-return baseline MAE", { exact: true })).toBeVisible();
 });
 
 
@@ -86,4 +86,16 @@ test("sign-out in one tab cannot restore another tab on refresh", async ({ page,
   await expect(page).toHaveURL(/\/login\/?$/);
   await other.reload();
   await expect(other).toHaveURL(/\/login\/?$/);
+});
+
+test("authenticated historical scorecard labels uncertainty and baseline performance", async ({ page }) => {
+  test.skip(!process.env.MARKETPULSE_E2E_EMAIL || !process.env.MARKETPULSE_E2E_PASSWORD,
+    "Requires isolated disposable login account");
+  await signInWithDisposableAccount(page);
+  await page.getByRole("link", { name: "Model Reliability" }).click();
+  await expect(page.getByRole("heading", { name: "Model reliability scorecard" })).toBeVisible();
+  await expect(page.getByText("Not measured").first()).toBeVisible();
+  await expect(page.getByText("Strongest simple baseline MAE")).toBeVisible();
+  await page.getByLabel("Stock to inspect").selectOption("NVDA");
+  await expect(page.getByRole("heading", { name: "NVDA · historical model comparison" })).toBeVisible();
 });
