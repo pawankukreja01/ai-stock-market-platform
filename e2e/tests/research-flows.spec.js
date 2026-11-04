@@ -42,6 +42,10 @@ test("authenticated forecast scorecard shows no fabricated performance", async (
   await page.getByLabel("Email address").fill(process.env.MARKETPULSE_E2E_EMAIL);
   await page.getByLabel("Password", { exact: true }).fill(process.env.MARKETPULSE_E2E_PASSWORD);
   await page.getByRole("button", { name: "Sign in securely" }).click();
+  // Wait for the authenticated router transition before performing a
+  // full-page navigation, otherwise the test races session establishment.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Market Intelligence" })).toBeVisible();
   await page.goto("/forecast-performance");
   await expect(page.getByRole("heading", { name: "Prospective forecast performance" })).toBeVisible();
   await expect(page.getByText("Zero-return baseline MAE", { exact: true })).toBeVisible();
