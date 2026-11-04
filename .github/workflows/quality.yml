@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, integration/v1-release-security, fix/preview-market-data-readiness]
+    branches: [main, integration/v1-release-security, fix/preview-market-data-readiness, feature/investment-research-decision-quality]
   workflow_dispatch:
 
 jobs:
