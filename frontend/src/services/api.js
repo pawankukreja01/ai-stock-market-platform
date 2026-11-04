@@ -481,6 +481,7 @@ export const getStockRecommendations = async ({
   horizon_months = 12,
   market = "",
   max_candidates = 10,
+  allocation_method = "diversified",
 } = {}) => {
   const params = {
     budget,
@@ -488,6 +489,7 @@ export const getStockRecommendations = async ({
     risk_tolerance,
     horizon_months,
     max_candidates,
+    allocation_method,
   };
 
   if (market) params.market = market;
