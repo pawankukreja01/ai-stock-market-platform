@@ -1,0 +1,17 @@
+stock,model,mae_pp,best_baseline_mae_pp,balanced_direction_pct,negative_specificity_pct,predicted_positive_pct,folds,oos_observations,beats_all_baselines
+AAPL,random_forest,3.227,3.119,48.52,15.88,82.41,17,1700,false
+AAPL,conservative_forest,3.147,3.119,48.15,7.46,90.41,17,1700,false
+AAPL,zero_anchor_ridge,3.263,3.119,49.63,63.40,36.18,17,1700,false
+AAPL,xgboost,3.606,3.119,49.29,41.71,57.47,17,1700,false
+ABF.L,random_forest,2.885,2.536,50.46,18.67,81.80,5,500,false
+ABF.L,conservative_forest,2.725,2.536,48.92,7.88,91.00,5,500,false
+ABF.L,zero_anchor_ridge,2.716,2.536,50.56,21.58,79.00,5,500,false
+ABF.L,xgboost,3.251,2.536,51.54,33.20,68.40,5,500,false
+MSFT,random_forest,3.132,2.987,50.55,12.00,88.60,5,500,false
+MSFT,conservative_forest,3.047,2.987,49.74,3.11,96.60,5,500,false
+MSFT,zero_anchor_ridge,3.058,2.987,50.30,37.33,63.00,5,500,false
+MSFT,xgboost,3.389,2.987,51.35,24.89,76.60,5,500,false
+NVDA,random_forest,4.844,4.449,49.91,0.91,99.00,5,500,false
+NVDA,conservative_forest,4.602,4.449,50.00,0.00,100.00,5,500,false
+NVDA,zero_anchor_ridge,4.418,4.449,54.08,27.15,77.40,5,500,true
+NVDA,xgboost,5.404,4.449,55.11,28.51,77.20,5,500,false
