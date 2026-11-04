@@ -14,11 +14,15 @@ The candidate was chosen after repeatedly inspecting the 2026-11-02 four-stock d
 
 ## Locked 33-stock validation
 
-The exact historical 33-stock manifest must be recovered first. Search the owner's research workspace for:
+**Recovered and verified 2026-11-04.** The original owner's `raw_vs_adjusted_33_stock_report.json` was uploaded and its `configuration.symbols` list checked against `preflight.results` (same exact ordered sequence), `stocks` keys, uniqueness, and success flags. The source reports 33/33 processed, 33/33 aligned, and 0 preflight errors.
 
-`~/Desktop/marketpulse_model_evaluation/raw_vs_adjusted_33_stock_report.json`
+- Verified report SHA-256: `c3943426966a282eb5342e12a4b6e9f3ca7453cabc8ba693490f908e52acc745`.
+- Source configuration: five-session forecast, minimum train 400, test size/step 80, purge gap **5**. This is **not** the new frozen study's train 500, step 100 and H+1-row purge.
+- Original 33 tickers now committed in `backend/market_data/research_cohorts/raw_adjusted_33_stock_v1.json`; SHA-256: `8ceac6b8b1d1ada47a719f97ab29c398696d1b28211c27523e7d963d4739e345`.
+- Exchange coverage: 12 LSE, 11 NYSE and 10 NASDAQ. The original preflight is evidence of source alignment **under its old protocol**, not evidence that every stock has the 3+ purged folds needed at each of the new four horizons.
+- Do not fabricate replacements for any excluded symbols. In particular SVT.L had 686 usable rows in the prior report, which may limit valid folds.
 
-Extract and verify its **original** 33 unique ticker symbols. Do not invent a list or silently substitute current stocks. Once verified, write `~/Desktop/marketpulse_model_evaluation/frozen_33_stock_cohort.json` using `{"symbols": ["... exactly 33 real symbols ..."]}`. The JSON shown is an illustrative shape, **not** the cohort.
+If using the repository version of the manifest, pass `--cohort-file market_data/research_cohorts/raw_adjusted_33_stock_v1.json` while in `backend/`. The file is committed as a research input, **not** a stock recommendation.
 
 In the new worktree after fetching/checking out this PR's branch:
 
@@ -31,7 +35,7 @@ cd backend
 DB_NAME=marketpulse_restored_test \
 ~/Desktop/ai-stock-market-platform/.venv/bin/python \
 manage.py validate_frozen_forecast_candidate \
-  --cohort-file ~/Desktop/marketpulse_model_evaluation/frozen_33_stock_cohort.json \
+  --cohort-file market_data/research_cohorts/raw_adjusted_33_stock_v1.json \
   --as-of 2026-11-02 \
   --output ~/Desktop/marketpulse_model_evaluation/frozen_ridge1000_33stock_20261102.json
 ```
