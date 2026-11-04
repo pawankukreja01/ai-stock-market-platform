@@ -11,6 +11,44 @@ from market_data.management.commands.validate_stock_forecasts import (
 from market_data.research_pipeline_experiments import ridge_factory
 from walk_forward import describe_fold, generate_walk_forward_splits
 
+PRICE_VOLUME_FEATURE_COLUMNS = (
+    "return_1d",
+    "return_5d",
+    "return_20d",
+    "return_60d",
+    "return_126d",
+    "return_252d",
+    "sma20_ratio",
+    "sma50_ratio",
+    "sma200_ratio",
+    "ema20_ratio",
+    "ema50_ratio",
+    "rsi_14",
+    "roc_12",
+    "volatility_20d",
+    "volatility_60d",
+    "atr_14_ratio",
+    "volume_change_1d",
+    "relative_volume_20d",
+)
+
+def validate_frozen_feature_schema(X):
+    """Require precisely the original 18 price/volume inputs, in order.
+
+    `relative_volume_20d` is a *volume* feature, not an external market
+    relative-return indicator. Explicitly pinning the schema avoids the
+    earlier over-broad `relative_` prefix check and prevents silent drift.
+    """
+    columns = tuple(X.columns)
+    if columns != PRICE_VOLUME_FEATURE_COLUMNS:
+        missing = [name for name in PRICE_VOLUME_FEATURE_COLUMNS if name not in columns]
+        unexpected = [name for name in columns if name not in PRICE_VOLUME_FEATURE_COLUMNS]
+        raise ValueError(
+            "Frozen candidate requires original price/volume-only features "
+            f"(missing={missing}, unexpected={unexpected}, "
+            f"order_mismatch={not missing and not unexpected})."
+        )
+
 LOCK_FILE = Path(__file__).with_name("frozen_research_candidate.json")
 FROZEN_SPEC = {
     "candidate_id": "ridge-zero-anchor-expanding-alpha1000-price-volume-v1",
@@ -54,11 +92,7 @@ def evaluate_frozen_candidate(X, y, *, horizon):
         raise ValueError("Horizon is not part of the frozen evaluation plan.")
     if not X.index.is_unique or not X.index.is_monotonic_increasing or not X.index.equals(y.index):
         raise ValueError("Feature and target dates must align and be chronological.")
-    if not len(X.columns) or any(
-        name.startswith(("target_", "benchmark_", "relative_")) or
-        name.endswith("_by_vol20") for name in X.columns
-    ):
-        raise ValueError("Frozen candidate requires original price/volume-only features.")
+    validate_frozen_feature_schema(X)
     folds = generate_walk_forward_splits(
         X, y, minimum_train_size=FROZEN_SPEC["min_train"],
         test_size=FROZEN_SPEC["test_size"],
