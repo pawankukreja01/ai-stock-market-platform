@@ -94,6 +94,25 @@ class RecommendationEngineTests(SimpleTestCase):
         self.assertEqual(scores, sorted(scores, reverse=True))
         self.assertTrue(all(0 <= score <= 100 for score in scores))
 
+    def test_stock_rank_includes_evidence_coverage_not_profit_confidence(self):
+        result = rank_feature_records(self.records)
+        self.assertEqual(result["ranking_method"],
+                         "research_percentile_heuristics_not_predictive_probabilities")
+        self.assertFalse(result["forecast_included"])
+        item = next(row for row in result["results"] if row["symbol"] == "AAA")
+        self.assertGreaterEqual(item["evidence"]["percentage"], 60)
+        self.assertEqual(item["evidence"]["total_components"], 5)
+        self.assertIn("not predicted-return confidence",
+                      item["evidence"]["note"])
+        self.assertEqual(item["research_warnings"], [])
+        self.assertIn("excluded_candidates", result)
+
+    def test_missing_news_generates_coverage_warning(self):
+        result = rank_feature_records(self.records)
+        stock = next(row for row in result["results"] if row["symbol"] == "CCC")
+        self.assertIn("News sentiment has insufficient analyzed articles.",
+                      stock["research_warnings"])
+
     def test_forecast_is_not_fabricated(self):
         result = rank_feature_records(self.records)
 
