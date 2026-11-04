@@ -7,6 +7,7 @@ from stocks.models import Stock
 from market_data.models import LatestQuote
 from market_data.quote_service import (
     QuoteDataUnavailable,
+    QuoteProviderRateLimited,
     fetch_latest_quote,
 )
 
@@ -180,6 +181,17 @@ class Command(BaseCommand):
                     f"Quote type: {quote.quote_type} | "
                     f"Source: {quote.source_timestamp}"
                 )
+
+            except QuoteProviderRateLimited as exc:
+                failed += 1
+                remaining = total - index
+                self.stderr.write(
+                    self.style.ERROR(
+                        f"Yahoo rate limited quote requests at {stock.symbol}: {exc}. "
+                        f"Stopping this batch; {remaining} stock(s) not requested."
+                    )
+                )
+                break
 
             except QuoteDataUnavailable as exc:
                 failed += 1

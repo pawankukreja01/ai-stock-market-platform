@@ -29,6 +29,7 @@ User = get_user_model()
         "DEFAULT_THROTTLE_RATES": {
             "auth_verification": "5/hour",
             "auth_password_reset": "5/hour",
+            "auth_login": "1000/hour",
         },
     },
 )

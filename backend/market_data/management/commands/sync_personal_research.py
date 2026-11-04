@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
 
 from stocks.models import Stock
+from market_data.provider_errors import is_provider_rate_limit
 
 
 REQUIRED_TEST_DB = "marketpulse_restored_test"
@@ -136,6 +137,7 @@ class Command(BaseCommand):
 
         succeeded = 0
         failed = []
+        rate_limited = False
         for index, symbol in enumerate(symbols):
             if index > 0:
                 time.sleep(opts["delay_seconds"])
@@ -173,10 +175,20 @@ class Command(BaseCommand):
                     self.stdout.write(f"  {symbol}: {label} step completed")
                 except Exception as exc:
                     failed.append(f"{symbol} {label}: {type(exc).__name__}")
+                    if is_provider_rate_limit(exc):
+                        rate_limited = True
+                        self.stderr.write(
+                            f"  {symbol}: provider HTTP 429/rate limit. "
+                            "Stopping remaining research refresh steps; "
+                            "cached records retained."
+                        )
+                        break
                     self.stderr.write(
                         f"  {symbol}: {label} step FAILED "
                         f"({type(exc).__name__}: {exc})"
                     )
+            if rate_limited:
+                break
 
         self.stdout.write(
             f"Research sync summary: {succeeded} successful steps, "

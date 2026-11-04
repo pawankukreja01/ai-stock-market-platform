@@ -67,6 +67,65 @@ The original `ai_stock_market` database must be preserved. The latest
 readiness and provider safeguards are research tooling, not a declaration
 that predictive models outperform baselines.
 
+## Next development phase: Yahoo rate-limit resilience
+
+The quote service now treats explicit Yahoo Finance HTTP 429 / rate-limit
+errors as provider unavailability, **not stock delisting**. If the
+first intraday request is rate-limited, it does not immediately make a
+second daily request. A bulk quote refresh stops its remaining requests
+after a confirmed 429; the opt-in personal quote monitor also halts on a
+confirmed rate limit rather than repeatedly requesting each symbol.
+
+These protections retain the last stored quote and its authoritative
+**source timestamp** (not a freshly fabricated timestamp). The
+authenticated Research Health page at `/research-health` continues to
+show cached data and source freshness with no external requests.
+
+The detection recognizes explicit HTTP 429 and yfinance rate-limit errors,
+but it cannot prevent all provider errors, remove existing rate limits, or
+guarantee market data access. There is no automatic bypass, IP rotation,
+or uncontrolled retry. A stopped monitor must be restarted explicitly
+once the provider is accessible and authorized.
+
+This next phase is developed separately from the merged review build;
+read-only validation and the original database preservation rules remain
+in force.
+
+## Release candidate — seven-milestone development pass
+
+This branch extends the existing merged MarketPulse core across
+data-provider reliability, data quality, prospective model verification,
+beginner UX, browser acceptance scaffolding, deployment preview and
+beta handover. **It is not a completed public deployment.**
+
+- Provider outage: explicit Yahoo 429 fail-fast behavior in the quote
+  service, bulk refresh, personal monitor and opt-in research sync.
+  Existing cached quotes and authoritative source timestamps are
+  preserved rather than fabricated.
+- Price history: dry-run ingestion preview, large adjustment-factor
+  preflight warnings, currency provenance, original-database safety
+  checks and read-only health audits.
+- AI: opt-in staff-only issuance to an immutable prospective forecast
+  journal on `marketpulse_restored_test`, an offline future-outcome
+  settlement preview and zero-baseline skill report. New forecast
+  accuracy remains **unproven**.
+- Frontend: Getting Started and Forecast Performance screens, alongside
+  existing Stock Discovery, Portfolio, Alerts and Research Health.
+- Tests: CI-backed Django regression tests, frontend Node checks and
+  Vite build; an opt-in Playwright desktop/mobile acceptance suite
+  requiring a dedicated isolated preview account.
+- Infrastructure: non-sensitive liveness/readiness endpoints, Docker
+  local-preview scaffolding, Gunicorn/WhiteNoise static serving,
+  Nginx single-origin proxy; production secrets/hosting/email/media
+  storage/backup policies must be supplied and verified externally.
+- Handover: `docs/FORECAST_TRACKING.md`, `docs/DEPLOYMENT.md`,
+  `docs/BETA_HANDOVER.md` and `e2e/README.md`.
+
+The Docker preview uses an independent `marketpulse_preview` database
+and dedicated volume. It is not attached to your protected Mac
+`ai_stock_market` or `marketpulse_restored_test`. Never run migrations
+on the original Mac database merely to review this branch.
+
 ## Main capabilities
 
 The current application includes the following areas:

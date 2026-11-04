@@ -16,6 +16,7 @@ import pandas as pd
 import yfinance as yf
 
 from stocks.catalog import market_for_exchange
+from market_data.provider_errors import is_provider_rate_limit, safe_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +264,7 @@ def fetch_benchmark_prices(
 
     end_exclusive = end_date + timedelta(days=2)
     last_error = None
+    rate_limited = False
     downloaded = pd.Series(dtype=float)
     for attempt in range(1, download_attempts + 1):
         try:
@@ -288,22 +290,40 @@ def fetch_benchmark_prices(
             break
         except Exception as exc:
             last_error = exc
+            if is_provider_rate_limit(exc):
+                # A 429 is a provider denial, not a transient missing row.
+                # Respect it immediately and do not start another attempt.
+                rate_limited = True
+                logger.warning(
+                    "Benchmark provider rate-limited %s; no retry attempted.",
+                    ticker,
+                )
+                break
             logger.warning(
                 "Benchmark download attempt %s/%s failed for %s: %s",
-                attempt, download_attempts, ticker, exc,
+                attempt, download_attempts, ticker, safe_provider_error(exc),
             )
             if attempt < download_attempts and retry_delay_seconds:
                 time.sleep(retry_delay_seconds * attempt)
 
     if downloaded.empty:
-        reason = (
-            f"Benchmark cache miss for {ticker} ({start_date.date()} to {end_date.date()}); "
-            f"download failed after {download_attempts} attempt(s): {last_error}"
-        )
+        if rate_limited:
+            reason = (
+                f"Benchmark cache miss for {ticker}: provider rate limited "
+                "(HTTP 429). Existing cached records were not changed."
+            )
+            status = "provider_rate_limited"
+        else:
+            reason = (
+                f"Benchmark cache miss for {ticker} ({start_date.date()} to {end_date.date()}); "
+                f"download failed after {download_attempts} attempt(s): "
+                f"{safe_provider_error(last_error)}"
+            )
+            status = "download_failed"
         if strict:
             raise BenchmarkDataUnavailable(reason) from last_error
         logger.warning("%s; omitting optional benchmark features for this request.", reason)
-        result = _empty_series("download_failed", ticker=ticker, reason=reason)
+        result = _empty_series(status, ticker=ticker, reason=reason)
         return result
 
     merged = pd.concat([cached, downloaded]) if not cached.empty else downloaded.copy()

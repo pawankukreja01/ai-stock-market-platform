@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getCurrentUser } from "./services/api";
 import AppLayout from "./components/layout/AppLayout.vue";
+import { logoutPending, markLogoutPending, recordSessionExpiry, sessionIsPastDeadline } from "./utils/sessionSafety.js";
+import { resolvePendingLogout } from "./utils/logoutFlow.js";
 
 const routes = [
   {
@@ -41,6 +43,11 @@ const routes = [
         component: () => import("./views/Dashboard.vue"),
       },
       {
+        path: "getting-started",
+        name: "GettingStarted",
+        component: () => import("./views/GettingStarted.vue"),
+      },
+      {
         path: "profile",
         name: "Profile",
         component: () => import("./views/Profile.vue"),
@@ -55,6 +62,11 @@ const routes = [
         name: "StockResearch",
         component: () => import("./views/StockResearch.vue"),
         props: true,
+      },
+      {
+        path: "forecast-performance",
+        name: "ForecastPerformance",
+        component: () => import("./views/ForecastPerformance.vue"),
       },
       {
         path: "research-health",
@@ -102,10 +114,25 @@ router.beforeEach(async (to) => {
   // Public verification/reset pages do not need an unnecessary /me request.
   if (!requiresAuth && !guestOnly) return true;
 
+  // A failed sign-out MUST NOT be overridden by a stale Django cookie.
+  // Recheck the server, but never unblock a protected route until resolved.
+  if (logoutPending()) {
+    const resolved = await resolvePendingLogout();
+    if (!resolved) return requiresAuth ? "/login" : true;
+  }
+
   let user = null;
   try {
     const response = await getCurrentUser();
-    user = response?.user ?? null;
+    const expiresAt = response?.session?.expires_at;
+    if (response?.user && expiresAt && !sessionIsPastDeadline(expiresAt)) {
+      user = response.user;
+      recordSessionExpiry(expiresAt);
+    } else if (response?.user) {
+      // Any legacy or malformed session without a server deadline is denied.
+      markLogoutPending();
+      return requiresAuth ? "/login" : true;
+    }
   } catch {
     user = null;
   }
