@@ -38,6 +38,15 @@ class RecommendationRequestSerializer(serializers.Serializer):
         default=20,
     )
 
+    allocation_method = serializers.ChoiceField(
+        choices=("diversified", "rank_first"),
+        default="diversified",
+        help_text=(
+            "diversified: fixed per-position/sector concentration limits; "
+            "rank_first: legacy single-position-heavy paper allocation."
+        ),
+    )
+
     def validate_currency(self, value):
         value = value.upper()
 
