@@ -28,36 +28,56 @@ Export is read-only on the restored test DB. Import writes only to the separate
 Source historical date, currency provenance, adjusted_close and quality flags
 are retained; missing values are not synthesized.
 
-From the original project directory on your Mac **after checking out this fix
-branch**, using the existing Python virtual environment:
+The user's main repository may have local work. **Do not switch branches
+in-place or change the user's original data.** Create a separate detached
+worktree. Keep the same Docker Compose project name so the existing isolated
+preview volume, users and settings are retained:
 
 ```bash
 cd ~/Desktop/ai-stock-market-platform
-mkdir -p marketpulse_model_evaluation
-DB_NAME=marketpulse_restored_test \
-  .venv/bin/python backend/manage.py export_preview_market_snapshot \
-  --output marketpulse_model_evaluation/preview_market_archive.jsonl.gz
+git fetch origin fix/preview-market-data-readiness
+git worktree add --detach ~/Desktop/ai-stock-market-platform-preview-fix \
+  origin/fix/preview-market-data-readiness
+cd ~/Desktop/ai-stock-market-platform-preview-fix
+for name in .env preview.env; do
+  if [ -f ~/Desktop/ai-stock-market-platform/"$name" ] && [ ! -e "$name" ]; then
+    ln -s ~/Desktop/ai-stock-market-platform/"$name" "$name"
+  fi
+done
 
-docker compose --env-file preview.env -f compose.preview.yml \
-  cp marketpulse_model_evaluation/preview_market_archive.jsonl.gz \
+# Reuse the same isolated preview Compose project; never use down -v.
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml up -d --build
+
+# Read the restored research database, never ai_stock_market.
+mkdir -p ~/Desktop/ai-stock-market-platform/marketpulse_model_evaluation
+DB_NAME=marketpulse_restored_test \
+  ~/Desktop/ai-stock-market-platform/.venv/bin/python \
+  backend/manage.py export_preview_market_snapshot \
+  --output ~/Desktop/ai-stock-market-platform/marketpulse_model_evaluation/preview_market_archive.jsonl.gz
+
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml cp \
+  ~/Desktop/ai-stock-market-platform/marketpulse_model_evaluation/preview_market_archive.jsonl.gz \
   backend:/tmp/preview_market_archive.jsonl.gz
 
-docker compose --env-file preview.env -f compose.preview.yml \
-  exec backend python manage.py import_preview_market_snapshot \
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml exec backend \
+  python manage.py import_preview_market_snapshot \
   --input /tmp/preview_market_archive.jsonl.gz --dry-run
 
-# After checking the dry-run counts, opt into writing to the isolated preview:
-docker compose --env-file preview.env -f compose.preview.yml \
-  exec backend python manage.py import_preview_market_snapshot \
+# ONLY after reviewing the dry-run counts, explicitly import to preview.
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml exec backend \
+  python manage.py import_preview_market_snapshot \
   --input /tmp/preview_market_archive.jsonl.gz
 ```
 
-**Important:** This repair branch changes Django management commands. Rebuild
-the backend image before `compose cp` and import:
-
-```bash
-docker compose --env-file preview.env -f compose.preview.yml up -d --build
-```
+The `-p ai-stock-market-platform` option assumes that is the name of the
+existing Compose preview project (the standard name for the original folder).
+Before running, verify using `docker compose ls`; use the existing preview
+project name if different. Otherwise you might start a *separate empty*
+preview database volume rather than fix the current one.
 
 This preserves existing preview volumes. **Do not** run `down -v`,
 `volume prune`, or restore the original entire database into preview.
@@ -74,7 +94,7 @@ imported observations.
 After import, verify:
 
 ```bash
-docker compose --env-file preview.env -f compose.preview.yml exec backend \
+docker compose -p ai-stock-market-platform --env-file preview.env -f compose.preview.yml exec backend \
   python manage.py shell -c "from market_data.models import HistoricalPrice, Fundamental, NewsArticle; from stocks.models import Stock; print('stocks',Stock.objects.filter(is_active=True).count(),'historical_prices',HistoricalPrice.objects.count(),'fundamentals',Fundamental.objects.count(),'news',NewsArticle.objects.count())"
 ```
 
