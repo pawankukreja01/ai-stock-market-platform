@@ -65,6 +65,22 @@
 
 
 
+    <section v-if="marketCoverage" class="preview-coverage" aria-label="Stored market data availability">
+      <strong>{{ marketCoverage.historical_price_count ? "Historical market data available" : "Market data not loaded" }}</strong>
+      <p v-if="!marketCoverage.historical_price_count">
+        Your stock catalogue is available, but this isolated preview has no historical OHLC prices yet.
+        Price charts, risk analysis, predictions, backtests and recommendations need stored observations.
+        Import a reviewed offline market snapshot into the preview database. No live market data is implied.
+      </p>
+      <p v-else>
+        {{ marketCoverage.historical_price_count.toLocaleString() }} stored price rows;
+        latest observation {{ marketCoverage.last_historical_date || "unknown" }}.
+        {{ marketCoverage.fundamental_record_count.toLocaleString() }} fundamental records;
+        {{ marketCoverage.news_article_count.toLocaleString() }} news articles.
+        Historical observations are not live market quotes.
+      </p>
+    </section>
+
     <!-- Market benchmarks powered by the existing Django API. -->
     <section class="market-overview-section" aria-labelledby="market-overview-title">
       <div class="market-overview-heading">
@@ -1079,6 +1095,7 @@ import {
   getCurrentUser,
   getLatestQuote,
   getBenchmarkComparison,
+  getMarketDataCoverage,
 } from "../services/api";
 
 
@@ -1101,6 +1118,17 @@ const stocks = ref([]);
 const loadingStocks = ref(true);
 
 const stocksError = ref("");
+
+const marketCoverage = ref(null);
+async function loadMarketCoverage() {
+  try {
+    marketCoverage.value = await getMarketDataCoverage();
+  } catch {
+    // An unavailable readiness check must not prevent other dashboard content.
+    marketCoverage.value = null;
+  }
+}
+
 
 
 
@@ -2236,6 +2264,7 @@ async function loadStocks() {
 // leaving the dashboard permanently in its loading state.
 onMounted(() => {
   loadStocks();
+  loadMarketCoverage();
   loadUserPreferences();
   loadMarketOverview();
 });
@@ -2245,6 +2274,18 @@ onMounted(() => {
 
 
 <style scoped>
+
+.preview-coverage{
+  padding:15px 18px;
+  margin:0 0 22px;
+  border:1px solid #c7d7ef;
+  border-left:4px solid #2563eb;
+  border-radius:12px;
+  background:#f3f7fd;
+  color:#1f3555;
+}
+.preview-coverage strong{display:block;margin-bottom:5px}
+.preview-coverage p{margin:0;line-height:1.6;font-size:13px}
 
 .dashboard {
 
