@@ -21,6 +21,43 @@
       </button>
     </header>
 
+    <section v-if="rankingEvidence" class="panel" aria-label="Historical ranking reliability">
+      <div class="section-heading"><div>
+        <h2>Measured historical ranking results · research only</h2>
+        <p>Top-five shortlist compared with the equal-weight ranked-eligible universe, January 2024 to April 2026.</p>
+      </div></div>
+      <div class="stats-grid">
+        <article class="stat-card">
+          <span>Baseline wins</span><strong>{{ rankingEvidence.summary.wins }} / {{ rankingEvidence.summary.evaluated_periods }}</strong>
+          <small>Not forecast accuracy or probability of profit</small>
+        </article>
+        <article class="stat-card">
+          <span>Average excess return per period</span>
+          <strong>{{ rankingEvidence.summary.mean_excess_return_percentage_points.toFixed(2) }} pp</strong>
+          <small>Median: {{ rankingEvidence.summary.median_excess_return_percentage_points.toFixed(2) }} pp</small>
+        </article>
+        <article class="stat-card">
+          <span>2026 baseline wins</span>
+          <strong>{{ rankingEvidence.by_year.find(item => item.year === 2026)?.wins ?? 0 }} / {{ rankingEvidence.by_year.find(item => item.year === 2026)?.evaluated_periods ?? 0 }}</strong>
+          <small>Only three evaluated periods</small>
+        </article>
+      </div>
+      <p class="forecast-note"><strong>Not validated for investment decisions.</strong>
+      Stock survivorship bias, incomplete timestamp provenance, estimated costs,
+      FX and execution constraints limit these retrospective diagnostics.
+      Equal transaction-cost assumptions cancel in the relative comparison.</p>
+      <details class="component-details">
+        <summary>View annual results and limitations</summary>
+        <ul>
+          <li v-for="year in rankingEvidence.by_year" :key="year.year">
+            {{ year.year }}: {{ year.wins }} / {{ year.evaluated_periods }} baseline wins;
+            mean excess return {{ year.average_excess_return_percentage_points.toFixed(2) }} pp
+          </li>
+          <li v-for="(issue, i) in rankingEvidence.limitations" :key="i">{{ issue }}</li>
+        </ul>
+      </details>
+    </section>
+
     <section class="research-guide" aria-label="How to use MarketPulse recommendations">
       <div class="research-guide-heading">
         <span class="guide-label">START HERE</span>
@@ -422,8 +459,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
-import { getStockRecommendations } from "../services/api";
+import { computed, onMounted, reactive, ref } from "vue";
+import { getStockRecommendations, getRankingEvidence } from "../services/api";
 
 const form = reactive({
   budget: "1000.00",
@@ -438,6 +475,20 @@ const form = reactive({
 const data = ref(null);
 const loading = ref(false);
 const error = ref("");
+const rankingEvidence = ref(null);
+onMounted(async () => {
+  try {
+    const value = await getRankingEvidence();
+    if (value?.kind === "historical_ranking_replay_snapshot" &&
+        value?.approved_to_claim_recommendation_accuracy === false &&
+        value?.research_role === "development_diagnostic_not_independent_holdout") {
+      rankingEvidence.value = value;
+    }
+  } catch {
+    rankingEvidence.value = null;
+  }
+});
+
 
 const selectedCurrency = computed(() => form.currency);
 
