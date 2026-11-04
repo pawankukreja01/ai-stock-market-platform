@@ -46,3 +46,44 @@ test("authenticated forecast scorecard shows no fabricated performance", async (
   await expect(page.getByText("Research accountability", { exact: false })).toBeVisible();
   await expect(page.getByText("zero-return baseline", { exact: false }).first()).toBeVisible();
 });
+
+
+async function signInWithDisposableAccount(page) {
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill(process.env.MARKETPULSE_E2E_EMAIL);
+  await page.getByLabel("Password", { exact: true }).fill(process.env.MARKETPULSE_E2E_PASSWORD);
+  await page.getByRole("button", { name: "Sign in securely" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Market Intelligence" })).toBeVisible();
+}
+
+test("server-verified sign-out stays signed out after reload", async ({ page }) => {
+  test.skip(
+    !process.env.MARKETPULSE_E2E_EMAIL || !process.env.MARKETPULSE_E2E_PASSWORD,
+    "Requires the isolated preview account",
+  );
+  await signInWithDisposableAccount(page);
+  await page.getByRole("button", { name: "Log out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login\/?$/);
+  await page.reload();
+  await expect(page).toHaveURL(/\/login\/?$/);
+  const current = await page.request.get("/api/auth/me/");
+  expect([401, 403]).toContain(current.status());
+  await page.goto("/portfolio");
+  await expect(page).toHaveURL(/\/login\/?$/);
+});
+
+test("sign-out in one tab cannot restore another tab on refresh", async ({ page, context }) => {
+  test.skip(
+    !process.env.MARKETPULSE_E2E_EMAIL || !process.env.MARKETPULSE_E2E_PASSWORD,
+    "Requires the isolated preview account",
+  );
+  await signInWithDisposableAccount(page);
+  const other = await context.newPage();
+  await other.goto("/portfolio");
+  await expect(other.getByRole("heading", { name: "Portfolio overview" })).toBeVisible();
+  await page.getByRole("button", { name: "Log out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login\/?$/);
+  await other.reload();
+  await expect(other).toHaveURL(/\/login\/?$/);
+});
