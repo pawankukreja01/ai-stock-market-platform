@@ -8,7 +8,7 @@ Development-only safeguards; no forecast model is promoted and no investment ret
 `extract_candidate_features(stock, as_of=...)` now uses:
 - price and risk observations dated on/before `as_of`;
 - fundamentals with a non-null fiscal `period_end <= as_of` **and** actual stored
-  ingestion `created_at <= as_of`; late-backfilled and unknown-period records
+  ingestion `created_at <= as_of` **and last modification `updated_at <= as_of`**; late-backfilled, revised and unknown-period records
   are excluded from earlier evaluations;
 - news sentiment only if `published_at`, `retrieved_at`, and
   `sentiment_analyzed_at` all precede the evaluation date;
