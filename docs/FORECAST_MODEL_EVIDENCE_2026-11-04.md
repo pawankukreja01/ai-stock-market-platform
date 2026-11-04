@@ -1,45 +1,61 @@
-# MarketPulse — forecast model evidence (2026-11-04)
+# MarketPulse forecast model evidence — updated 2026-11-04
 
-**Status: experimental; no proven baseline-relative outperformance across the tested stocks.**
+**Research result: no consistent baseline-relative forecasting advantage, and no model is approved for trading or for promotion to the live predictor.**
 
-## Evaluation sources and comparability
+## Sources and integrity
 
-- Actual runs supplied from the local `marketpulse_restored_test` database on 2026-11-04, with research cutoff `2026-11-02`: `random_forest` and `zero_anchor_ridge` on AAPL, MSFT, NVDA and ABF.L.
-- Previously saved `marketpulse_xgboost_5d_validation.json`, `marketpulse_rf_5d_validation.json` and `marketpulse_linear_5d_validation.json` use cutoff `2026-11-03`, with AAPL, MSFT and NVDA only.
-- The archived Random Forest and baseline MAEs match the supplied current run to three decimals for those three stocks. This is strong consistency evidence but **not** a claim that XGBoost was re-run on 2026-11-04 or that every underlying raw row is identical.
-- The parameters are 5 trading days, 500 minimum train samples, 100 test samples per fold, and expanding-window chronological validation with an H+1-row purge. The archived reports are price/volume-only, not a final holdout.
-- The research dataset contains 184 stocks and 233,219 historical-price rows in a **local** restored test database. The independent Docker preview DB contains 0 historical prices and 0 prospective forecasts.
+Four freshly executed reports were supplied from the local `marketpulse_restored_test` data set:
 
-## Mean absolute forecast return error (percent; lower is better)
+| File | SHA-256 |
+|---|---|
+| `random_forest.json` | `45cda3340a930a86b5c07214a5fe3633950cd5e59c467ce07f08f31a92d71a6a` |
+| `conservative_forest.json` | `99eb83dad28ce5eca751cf07b78fd0b42f93e708a80917c9eedea8823f433b23` |
+| `zero_anchor_ridge.json` | `bcc281045183f68c3db605d256ce9aec7e15b6fc21d655c7b55980358748f920` |
+| `xgboost.json` | `683fbe75d35c56257fb1a3e2b5323353cc3107fea44df6d7cd25a7ca6938ae2c` |
 
-| Stock | Best simple baseline | Random Forest | Zero-anchor Ridge | XGBoost (archived) |
+**Identical across all reports:** 2026-11-02 `--as-of`, 5-session target, `--min-train 500`, `--test-size 100`, `price_volume` features, expanding-window folds, H+1 train/test purge. Per-stock fold date ranges, number of held-out observations, and every baseline metric are identical across the four reports. AAPL: 17 folds/1,700 held-out predictions. ABF.L, MSFT, NVDA: each five folds/500 held-out predictions.
+
+These are historical *development diagnostics*, not an untouched final holdout. There is no prospective outcome sample in these reports. The raw daily-price dataset remains on the developer's Mac and was **not** included in the submitted JSON summaries.
+
+## Five-day mean absolute return forecast error (MAE; percent/percentage points)
+
+**Lower is better**; predicted return error is not the same as percentage accuracy of stock price.
+
+| Stock | Best simple baseline | Regular RF | Conservative RF | Zero-anchor Ridge | XGBoost |
+|---|---:|---:|---:|---:|---:|
+| AAPL | **3.119%** (historical mean) | 3.227% | 3.147% | 3.263% | 3.606% |
+| ABF.L | **2.536%** (zero return) | 2.885% | 2.725% | 2.716% | 3.251% |
+| MSFT | **2.987%** (zero return) | 3.132% | 3.047% | 3.058% | 3.389% |
+| NVDA | 4.449% (zero return) | 4.844% | 4.602% | **4.418%** | 5.404% |
+
+Counts beating *all three* matched baselines (zero return, training historical mean, momentum): **regular RF 0/4; conservative RF 0/4; Ridge 1/4; XGBoost 0/4.** Only Ridge on NVDA is better than the strongest baseline: +0.031 percentage points of average absolute return error. That small historical improvement should not be promoted to an independent statistical/financial edge.
+
+The strongest **ML** for AAPL/MSFT by MAE is conservative RF, and for ABF.L/NVDA is zero-anchor Ridge. Choosing between them *using these same test outcomes* is not a legitimate out-of-sample model-selection policy.
+
+## Directional behavior
+
+| Model | NVDA balanced direction | NVDA negative specificity | NVDA predicted positive | NVDA actually positive |
 |---|---:|---:|---:|---:|
-| AAPL | 3.119 | 3.227 | 3.263 | 3.606 |
-| ABF.L | 2.536 | 2.885 | 2.716 | unavailable |
-| MSFT | 2.987 | 3.132 | 3.058 | 3.389 |
-| NVDA | 4.449 | 4.844 | **4.418** | 5.404 |
+| Regular RF | 49.9% | 0.9% | 99.0% | 55.8% |
+| Conservative RF | 50.0% | **0.0%** | **100.0%** | 55.8% |
+| Zero-anchor Ridge | 54.1% | 27.1% | 77.4% | 55.8% |
+| XGBoost | 55.1% | 28.5% | 77.2% | 55.8% |
 
-- Random Forest: 0/4 stocks beat zero-return, historical-mean and momentum baselines.
-- Zero-anchor Ridge: 1/4 stocks beat all three; NVDA improvement over the *best* baseline is only **0.031 percentage points**.
-- Archived XGBoost: 0/3 stocks beat all three baselines.
-- Conservative Random Forest: **not measured** on the exact local dataset; no results should be invented.
-- The default Random Forest on NVDA predicted an increase 99.0% of the time, versus 55.8% actually positive, with 0.9% negative specificity.
-- Ridge improved NVDA negative specificity to 27.1%, but predicted positive returns 77.4% of the time.
-- AAPL, ABF.L and MSFT Ridge balanced directional accuracy stayed approximately 50%; NVDA reached 54.1%.
+Conservative RF improves magnitude error versus regular RF but makes the upside-bias problem *worse* for NVDA (every test return is predicted positive). XGBoost obtains the highest NVDA balanced directional accuracy of these four yet has the worst MAE. This demonstrates that direction and return-magnitude performance must be evaluated separately.
 
-## Decision
+For AAPL, the Ridge positive-return prediction rate is only 36.2% versus 57.4% actual positive returns, illustrating a possible overcorrection.
 
-**Do not promote or replace the live model based on this development sample.** Keep predictions labelled experimental, show error and uncertainty against baselines, and avoid claiming a definitive price accuracy or profitability statistic.
+## Development decision
 
-## Remaining verification gates
+- **Do not change live model defaults or advertise profitable predictions.** Maintain experimental labels, baseline-relative MAE, balanced directional metrics, sample counts, freshness and interval calibration on the research UX.
+- Run an **immutable 33-stock / four-horizon** study (1, 5, 20, 60 sessions) after recovering the actual 33-stock cohort manifest; do not silently substitute the full 184-stock catalogue.
+- Investigate research-only shrinkage, rolling vs expanding train windows, market-relative features, regime and volatility-aware inputs, and leakage-safe nested selection. These are experimental hypotheses, not measured improvements.
+- Audit price adjustments, splits/dividends, missing sessions, benchmark dates, currency and next-session close execution; compare realistic net-of-cost strategy results.
+- Reserve an untouched chronological test region *before* tuning; avoid reusing the repeatedly inspected four-stock folds as proof of improvement. Add authentic prospective forecast measurements after the restored DB schema and backups are explicitly reviewed.
+- Preserve the original `ai_stock_market` database. Only research read-only queries against `marketpulse_restored_test` were involved in these diagnostics; no schema changes have been applied.
 
-1. Run conservative forest for all four stocks and XGBoost for ABF.L against the frozen 2026-11-02 local dataset.
-2. Recover/version the exact 33-stock cohort and price/return basis; do not substitute the full catalogue silently.
-3. Run identical stock/horizon/feature/fold comparisons for 1, 5, 20, 60 trading days with data-quality exclusions and no lookahead.
-4. Reserve an untouched validation period; report corrected uncertainty and trial-selection limitations.
-5. Track *real* future forecast issues and observed outcomes; the restored test DB's prospective table migration is still pending and must not be applied before a separate backup/review.
-6. Audit trading execution assumptions, transaction costs, dividends and corporate actions before any real-money suitability claim.
+See issue #5 and draft PR #4 for existing release and research gates.
 
-**Safety:** Never run ingestion/migrations/writes against the original `ai_stock_market` database. Current research validation commands are read-only on `marketpulse_restored_test`.
+## Code note
 
-Related: #5, PR #4.
+The live API currently defaults to the regular `random_forest`, not the research-only Ridge or conservative RF. No promotion is justified by the present evidence.
