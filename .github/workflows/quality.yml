@@ -81,3 +81,90 @@ jobs:
         run: npm test
       - name: Build production assets
         run: npm run build
+
+  browser:
+    name: Browser security and research smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: marketpulse_e2e
+          POSTGRES_PASSWORD: e2e-disposable-database-only
+          POSTGRES_DB: marketpulse_e2e_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U marketpulse_e2e -d marketpulse_e2e_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Isolated CI browser stack: disposable DB and HTTP loopback only.
+      # NEVER attach this job to the owner's real or restored local database.
+      DJANGO_DEBUG: "true"
+      DJANGO_SECRET_KEY: "ci-ephemeral-browser-test-only-not-for-deployment"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      EMAIL_BACKEND: "django.core.mail.backends.locmem.EmailBackend"
+      DB_NAME: marketpulse_e2e_ci
+      DB_USER: marketpulse_e2e
+      DB_PASSWORD: e2e-disposable-database-only
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      MARKETPULSE_BASE_URL: http://127.0.0.1:5173
+      MARKETPULSE_E2E_EMAIL: e2e-ci-user@example.invalid
+      MARKETPULSE_E2E_PASSWORD: "Disposable-only-Strong-Password-2026!"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          npm --prefix frontend ci
+          npm --prefix e2e install --no-audit --no-fund
+      - name: Install browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Migrate ONLY disposable CI database and create test account
+        run: |
+          python backend/manage.py migrate --noinput
+          python backend/manage.py shell -c 'import os; from django.contrib.auth import get_user_model; from accounts.models import UserProfile; U=get_user_model(); email=os.environ["MARKETPULSE_E2E_EMAIL"]; u=U.objects.create_user(username=email, email=email, password=os.environ["MARKETPULSE_E2E_PASSWORD"]); UserProfile.objects.create(user=u, email_verified=True)'
+      - name: Start loopback-only API and Vite
+        run: |
+          python backend/manage.py runserver --noreload 127.0.0.1:8000 > /tmp/marketpulse-api-ci.log 2>&1 &
+          npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort > /tmp/marketpulse-ui-ci.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/health/ready/ >/dev/null &&
+               curl -fsS http://127.0.0.1:5173/login >/dev/null; then
+              echo "Isolated browser stack is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/marketpulse-api-ci.log /tmp/marketpulse-ui-ci.log
+          exit 1
+      - name: Run desktop/mobile Chromium acceptance
+        working-directory: e2e
+        run: npx playwright test
+      - name: Upload browser traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketpulse-browser-diagnostics
+          path: |
+            e2e/test-results/
+            /tmp/marketpulse-api-ci.log
+            /tmp/marketpulse-ui-ci.log
+          if-no-files-found: ignore
+          retention-days: 5

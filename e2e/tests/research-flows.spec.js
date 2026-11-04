@@ -23,7 +23,7 @@ test("authenticated navigation and offline research health", async ({ page }) =>
   await page.goto("/login");
   await page.getByLabel("Email address").fill(process.env.MARKETPULSE_E2E_EMAIL);
   await page.getByLabel("Password").fill(process.env.MARKETPULSE_E2E_PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Sign in securely" }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.getByRole("link", { name: "Research Health" }).click();
   await expect(page.getByRole("heading", { name: "Research health" })).toBeVisible();
@@ -41,7 +41,7 @@ test("authenticated forecast scorecard shows no fabricated performance", async (
   await page.goto("/login");
   await page.getByLabel("Email address").fill(process.env.MARKETPULSE_E2E_EMAIL);
   await page.getByLabel("Password").fill(process.env.MARKETPULSE_E2E_PASSWORD);
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Sign in securely" }).click();
   await page.goto("/forecast-performance");
   await expect(page.getByText("Research accountability", { exact: false })).toBeVisible();
   await expect(page.getByText("zero-return baseline", { exact: false }).first()).toBeVisible();

@@ -15,3 +15,22 @@ as having passed. Run only against the isolated Docker preview database.
 No test should ever be run with a production URL, real user credentials,
 or the original local `ai_stock_market` database. The browser suite
 cannot establish exchange market-data accuracy or ML predictive skill.
+
+
+## Automated isolated CI browser gate
+
+The quality workflow now provisions its own **disposable** PostgreSQL service
+(`marketpulse_e2e_ci`), applies migrations only there, creates a test-only
+account and starts Django/Vite on loopback. Desktop and mobile Chromium run
+against the real session/CSRF endpoints without Yahoo requests or any user's
+original database. The login credentials in that job are intentionally
+throwaway and must never be reused outside CI.
+
+Browser tests include sign-in, protected page refresh, server-side logout
+confirmation, cross-tab sign-out and anonymous route behavior. Session
+expiry at 30 minutes / 12 hours remains covered by Django's clock-controlled
+regression tests rather than waiting for real clock time during CI.
+
+If the browser job fails, inspect GitHub's CI logs and short-lived Playwright
+traces. **A green CI gate does not replace** review of deployment secrets,
+HTTPS, shared rate limiting, backup restore, or third-party data rights.
