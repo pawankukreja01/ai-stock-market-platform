@@ -52,6 +52,33 @@
           </div>
           <p class="footnote">Positive change versus the baseline means smaller historical error. Choosing a winning model on these folds would invalidate their use as an independent test.</p>
         </section>
+        <section v-if="report.pipeline_diagnostics" class="results">
+          <h2>New pipeline experiments · 72 research configurations</h2>
+          <p>Matched historical tests of Ridge regularization, training-window length and volatility-normalized features. Results were inspected during development and are not independent validation.</p>
+          <div class="stats">
+            <article><small>Configurations beating all baselines</small><strong>{{ report.pipeline_diagnostics.beat_all_baselines }} / {{ report.pipeline_diagnostics.candidates_evaluated }}</strong><small>All winners were on NVDA; they share historical samples</small></article>
+            <article><small>Volatility-normalization pairs with lower MAE</small><strong>{{ report.pipeline_diagnostics.volatility_feature_comparisons_improved }} / {{ report.pipeline_diagnostics.volatility_feature_comparisons_total }}</strong><small>Not a consistent improvement</small></article>
+            <article><small>500-observation rolling pairs with lower MAE</small><strong>{{ report.pipeline_diagnostics.rolling500_comparisons_improved }} / {{ report.pipeline_diagnostics.rolling500_comparisons_total }}</strong><small>Expanding training generally did better</small></article>
+          </div>
+          <template v-if="ablationStock">
+            <h3>{{ stock.symbol }} · same expanding-window data, original features</h3>
+            <div class="scroll">
+              <table>
+                <thead><tr><th scope="col">Strongest simple baseline</th><th scope="col">Ridge α=100 MAE</th><th scope="col">Ridge α=1000 MAE</th><th scope="col">Historical improvement</th><th scope="col">Downside specificity, α=1000</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>{{ percent(ablationStock.best_baseline_mae_percent) }}</td>
+                    <td>{{ percent(ablationStock.alpha100_mae_percent) }}</td>
+                    <td>{{ percent(ablationStock.alpha1000_mae_percent) }}</td>
+                    <td>{{ delta(ablationStock.alpha100_mae_percent - ablationStock.alpha1000_mae_percent) }}</td>
+                    <td>{{ percent(ablationStock.alpha1000_negative_specificity_percent) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <p class="footnote">A lower Ridge error does not mean a model beats the best baseline, and better MAE can coincide with worse detection of falling prices. No change has been made to the live predictor.</p>
+        </section>
         <section class="results">
           <h2>Uncertainty and limitations</h2>
           <p>{{ report.uncertainty_note }}</p>
@@ -73,6 +100,7 @@ const loading = ref(true);
 const error = ref("");
 const symbol = ref("");
 const stock = computed(() => report.value?.stocks?.find(item => item.symbol === symbol.value) || null);
+const ablationStock = computed(() => report.value?.pipeline_diagnostics?.stock_comparisons?.find(item => item.symbol === symbol.value) || null);
 
 onMounted(async () => {
   try {
