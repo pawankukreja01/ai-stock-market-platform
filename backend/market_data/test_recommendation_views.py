@@ -145,7 +145,6 @@ class StockRecommendationsViewTests(APITestCase):
         self.assertEqual(item["rank"], 1)
 
     @patch("market_data.recommendation_views.recommend_stocks")
-    @patch("market_data.recommendation_views.recommend_stocks")
     def test_explicit_legacy_rank_first_keeps_existing_behavior(self, mock_recommend):
         mock_recommend.return_value = {
             "risk_tolerance": "moderate",
