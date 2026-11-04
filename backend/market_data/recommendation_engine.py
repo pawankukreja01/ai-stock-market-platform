@@ -319,7 +319,36 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
         if score is None:
             continue
 
+        coverage = record.get("data_quality", {})
+        evidence_count = sum(
+            components.get(name) is not None
+            for name in ("momentum", "fundamentals", "risk_adjusted",
+                         "sentiment", "data_quality")
+        )
+        # "Evidence coverage" reports missing inputs, not a probabilistic
+        # confidence that an investment will be profitable.
+        evidence = {
+            "available_components": evidence_count,
+            "total_components": 5,
+            "percentage": int(evidence_count / 5 * 100),
+            "price_age_days": record.get("price_age_days"),
+            "risk_observations": record.get("risk", {}).get("risk_observations"),
+            "has_fundamentals": coverage.get("fundamental_data_available", False),
+            "sentiment_articles": coverage.get("sentiment_articles", 0),
+            "note": "Source coverage, not predicted-return confidence or accuracy.",
+        }
+        warnings = []
+        if evidence_count <= 3:
+            warnings.append("Limited independent research evidence is available.")
+        if not evidence["has_fundamentals"]:
+            warnings.append("No stored fundamentals were available for this stock.")
+        if evidence["sentiment_articles"] < MIN_SENTIMENT_ARTICLES:
+            warnings.append("News sentiment has insufficient analyzed articles.")
+        if evidence["price_age_days"] is not None and evidence["price_age_days"] > 3:
+            warnings.append("Stored closing price is several calendar days old.")
         ranked.append({
+            "evidence": evidence,
+            "research_warnings": warnings,
             "symbol": record["symbol"],
             "company_name": record["company_name"],
             "exchange": record["exchange"],
@@ -340,7 +369,22 @@ def rank_feature_records(feature_records, *, risk_tolerance="moderate",
     for rank, item in enumerate(ranked, start=1):
         item["rank"] = rank
 
+    excluded = [
+        {
+            "symbol": record.get("symbol"),
+            "reasons": record.get("data_quality", {}).get("exclusion_reasons", []) or
+                ["Insufficient independent evidence to calculate a valid score."],
+        }
+        for record in feature_records
+        if record not in eligible or record.get("symbol") not in {
+            item["symbol"] for item in ranked
+        }
+    ]
+
     return {
+        "ranking_method": "research_percentile_heuristics_not_predictive_probabilities",
+        "data_as_of": None,
+        "excluded_candidates": excluded[:50],
         "risk_tolerance": risk_tolerance,
         "horizon_months": horizon_months,
         "weighting_method": "provisional_horizon_adjusted_research_heuristic",
@@ -407,9 +451,13 @@ def recommend_stocks(*, risk_tolerance="moderate", market=None,
                 stock.symbol,
             )
 
-    return rank_feature_records(
+    result = rank_feature_records(
         features,
         risk_tolerance=risk_tolerance,
         max_candidates=max_candidates,
         horizon_months=horizon_months,
     )
+    result["data_as_of"] = as_of.isoformat()
+    result["freshness_max_age_days"] = 7
+    result["fresh_candidate_universe"] = len(features)
+    return result
