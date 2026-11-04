@@ -1,0 +1,28 @@
+{
+  "candidate_id": "ridge-zero-anchor-expanding-alpha1000-price-volume-v1",
+  "selected_on": "2026-11-04",
+  "selection_evidence": "2026-11-02 four-stock 72-configuration development ablation; not independent validation",
+  "model": "zero_anchor_ridge",
+  "ridge_alpha": 1000,
+  "ridge_fit_intercept": false,
+  "imputation": "training_fold_median",
+  "scaling": "training_fold_standard_scaler",
+  "training_window": "expanding",
+  "feature_set": "price_volume",
+  "price_basis": "unadjusted_close_price",
+  "target": "C[t+H+1]/C[t+1]-1",
+  "horizons_trading_days": [
+    1,
+    5,
+    20,
+    60
+  ],
+  "min_train": 500,
+  "test_size": 100,
+  "step_size": 100,
+  "label_purge": "H+1_rows",
+  "benchmark_features": "none",
+  "validation_status": "frozen_candidate_not_validated",
+  "approved_for_live_prediction": false,
+  "claims_profitable": false
+}
