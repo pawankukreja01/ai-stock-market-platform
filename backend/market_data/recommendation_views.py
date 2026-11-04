@@ -1,5 +1,7 @@
 """API endpoint for stocks-only research rankings."""
 
+from django.db.models import Count, Max
+from .models import HistoricalPrice
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -45,6 +47,28 @@ class StockRecommendationsView(APIView):
         )
 
         response_data = dict(result)
+        if not result.get("results"):
+            prices = HistoricalPrice.objects.filter(stock__is_active=True)
+            requested_market = params.get("market")
+            if requested_market:
+                prices = prices.filter(stock__exchange__iexact=requested_market)
+            coverage = prices.aggregate(
+                price_count=Count("pk"),
+                latest_date=Max("date"),
+            )
+            latest = coverage["latest_date"]
+            response_data["data_coverage"] = {
+                "stored_price_rows": coverage["price_count"],
+                "latest_stored_date": latest.isoformat() if latest else None,
+                "reason": (
+                    "No historical price observations are stored for this market."
+                    if not coverage["price_count"]
+                    else "Historical observations exist, but none currently satisfy "
+                         "the ranking's freshness and minimum-data-quality requirements. "
+                         "Older market data must not be treated as current recommendations."
+                ),
+            }
+
         response_data["allocation"] = allocation
         response_data["request"] = {
             "budget": str(params["budget"]),
