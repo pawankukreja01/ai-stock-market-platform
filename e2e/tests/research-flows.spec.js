@@ -42,9 +42,11 @@ test("authenticated forecast scorecard shows no fabricated performance", async (
   await page.getByLabel("Email address").fill(process.env.MARKETPULSE_E2E_EMAIL);
   await page.getByLabel("Password", { exact: true }).fill(process.env.MARKETPULSE_E2E_PASSWORD);
   await page.getByRole("button", { name: "Sign in securely" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Market Intelligence" })).toBeVisible();
   await page.goto("/forecast-performance");
-  await expect(page.getByText("Research accountability", { exact: false })).toBeVisible();
-  await expect(page.getByText("zero-return baseline", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prospective forecast performance" })).toBeVisible();
+  await expect(page.getByText("Zero-return baseline MAE", { exact: true })).toBeVisible();
 });
 
 
@@ -86,4 +88,20 @@ test("sign-out in one tab cannot restore another tab on refresh", async ({ page,
   await expect(page).toHaveURL(/\/login\/?$/);
   await other.reload();
   await expect(other).toHaveURL(/\/login\/?$/);
+});
+
+test("authenticated preview shows genuine empty market-data coverage", async ({ page }) => {
+  test.skip(
+    !process.env.MARKETPULSE_E2E_EMAIL || !process.env.MARKETPULSE_E2E_PASSWORD,
+    "Requires an isolated disposable browser account",
+  );
+  await signInWithDisposableAccount(page);
+  const response = await page.request.get("/api/market-data-coverage/");
+  expect(response.status()).toBe(200);
+  const data = await response.json();
+  expect(data.live_market_data).toBe(false);
+  expect(data.historical_price_count).toBe(0);
+  await page.goto("/");
+  await expect(page.getByText("Market data not loaded")).toBeVisible();
+  await expect(page.getByText("no historical OHLC prices yet", { exact: false })).toBeVisible();
 });
