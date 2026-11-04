@@ -105,3 +105,18 @@ test("authenticated preview shows genuine empty market-data coverage", async ({ 
   await expect(page.getByText("Market data not loaded")).toBeVisible();
   await expect(page.getByText("no historical OHLC prices yet", { exact: false })).toBeVisible();
 });
+
+test("recommendation research uses diversified paper allocation and honest missing-data labels", async ({ page }) => {
+  test.skip(
+    !process.env.MARKETPULSE_E2E_EMAIL || !process.env.MARKETPULSE_E2E_PASSWORD,
+    "Requires isolated disposable preview account",
+  );
+  await signInWithDisposableAccount(page);
+  await page.getByRole("link", { name: "Recommendations" }).click();
+  await expect(page.getByRole("heading", { name: "Stock Recommendations" })).toBeVisible();
+  await expect(page.getByLabel("Illustrative allocation approach")).toHaveValue("diversified");
+  await expect(page.getByText("No research ranking is available for these parameters.")).toBeVisible();
+  await page.getByLabel("Illustrative allocation approach").selectOption("rank_first");
+  await page.getByRole("button", { name: "Generate recommendations" }).click();
+  await expect(page.getByText("Legacy rank-first whole-share paper allocation; high concentration risk.")).toBeVisible();
+});
