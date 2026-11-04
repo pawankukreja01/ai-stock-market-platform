@@ -3,6 +3,7 @@ from .screener_views import StockScreenerView
 from .investment_simulator_views import InvestmentSimulatorView
 from .quote_views import LatestQuoteView
 from .research_readiness_views import ResearchReadinessView
+from .market_data_coverage_views import MarketDataCoverageView
 from .prospective_views import ProspectiveCaptureView, ProspectiveResultsView
 
 from .views import (
@@ -26,6 +27,7 @@ from .sentiment_views import StockSentimentSummaryView
 from .recommendation_views import StockRecommendationsView
 
 urlpatterns = [
+    path("market-data-coverage/", MarketDataCoverageView.as_view(), name="market-data-coverage"),
     path("prospective-forecasts/capture/", ProspectiveCaptureView.as_view(), name="prospective-capture"),
     path("prospective-forecasts/results/", ProspectiveResultsView.as_view(), name="prospective-results"),
     path("research-readiness/", ResearchReadinessView.as_view(), name="research-readiness"),
