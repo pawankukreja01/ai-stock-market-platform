@@ -90,7 +90,16 @@ def export_snapshot(destination):
             ("fundamental", Fundamental),
             ("news", NewsArticle),
         ):
-            for obj in model.objects.select_related("stock").order_by("pk").iterator(chunk_size=1000):
+            queryset = model.objects.select_related("stock")
+            if kind == "price":
+                queryset = queryset.filter(close_price__gt=0)
+            elif kind == "fundamental":
+                # A nullable unique period-end does not guarantee
+                # idempotency; skip undated research statements.
+                queryset = queryset.filter(period_end__isnull=False)
+            elif kind == "news":
+                queryset = queryset.exclude(url="")
+            for obj in queryset.order_by("pk").iterator(chunk_size=1000):
                 write_record(output, kind, obj, symbol=obj.stock.symbol)
                 counts[kind] += 1
     return path, counts
@@ -181,6 +190,9 @@ def import_snapshot(path, *, dry_run=False):
         return counts, None
     created = {key: 0 for key in FIELDS}
     with transaction.atomic():
+        models = {"price": HistoricalPrice,
+                  "fundamental": Fundamental, "news": NewsArticle}
+        initial_rows = {kind: model.objects.count() for kind, model in models.items()}
         # Never delete existing preview data, or overwrite a newer observation.
         symbols = {}
         buffer = []
@@ -190,11 +202,9 @@ def import_snapshot(path, *, dry_run=False):
             nonlocal buffer, current_kind
             if not buffer:
                 return
-            model = {"price": HistoricalPrice,
-                     "fundamental": Fundamental, "news": NewsArticle}[current_kind]
-            before = model.objects.count()
-            model.objects.bulk_create(buffer, batch_size=500, ignore_conflicts=True)
-            created[current_kind] += model.objects.count() - before
+            models[current_kind].objects.bulk_create(
+                buffer, batch_size=500, ignore_conflicts=True
+            )
             buffer = []
 
         for kind, symbol, fields in iter_snapshot(path):
@@ -214,4 +224,6 @@ def import_snapshot(path, *, dry_run=False):
             if len(buffer) >= 1000:
                 flush()
         flush()
+        for kind, model in models.items():
+            created[kind] = model.objects.count() - initial_rows[kind]
     return counts, created
