@@ -61,6 +61,18 @@ docker compose -p ai-stock-market-platform --env-file preview.env \
   ~/Desktop/ai-stock-market-platform/marketpulse_model_evaluation/preview_market_archive.jsonl.gz \
   backend:/tmp/preview_market_archive.jsonl.gz
 
+# Docker cp may preserve a root-owned, 0600 file. The backend runs with a
+# non-root service account, which cannot read that file without this step.
+# The archive contains only whitelisted market observations, not user secrets.
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml exec -u 0 backend \
+  chmod 644 /tmp/preview_market_archive.jsonl.gz
+
+# Confirm the non-root app account can now access the snapshot.
+docker compose -p ai-stock-market-platform --env-file preview.env \
+  -f compose.preview.yml exec backend \
+  sh -c 'test -r /tmp/preview_market_archive.jsonl.gz && echo "Snapshot is readable"'
+
 docker compose -p ai-stock-market-platform --env-file preview.env \
   -f compose.preview.yml exec backend \
   python manage.py import_preview_market_snapshot \
@@ -121,3 +133,7 @@ because the application intentionally excludes prices over seven days old.
    import itself never calls Yahoo and does not bypass provider restrictions.
 6. Original `ai_stock_market` DB and experimental validation reports remain
    untouched.
+
+### Permission denied while reading the copied archive
+
+If `import_preview_market_snapshot --dry-run` reports `[Errno 13] Permission denied: '/tmp/preview_market_archive.jsonl.gz'`, the `docker compose cp` command copied a root-owned file that is unreadable to the backend's non-root user. The `exec -u 0 backend chmod 644` command above repairs **only that archive file**. Re-run `--dry-run` and inspect the counts before performing the real preview import. Do not work around it by running the full Django import as root; the database name guard must remain enforced.
