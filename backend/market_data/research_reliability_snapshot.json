@@ -221,5 +221,61 @@
         }
       ]
     }
-  ]
+  ],
+  "pipeline_diagnostics": {
+    "source_report": "pipeline_ablation_5d_20261102.json",
+    "report_sha256": "39957ec8f0516301304a6c077f22cbf0cec779600d7c7cc6e567b655e49f65b9",
+    "as_of": "2026-11-02",
+    "dataset_role": "development_diagnostic_not_independent_holdout",
+    "comparison": "fixed expanding-window price_volume Ridge alpha 100 versus alpha 1000 on identical OOS dates",
+    "cohort_status": "4 development stocks only; historical 33-symbol cohort not recovered",
+    "market_aligned": false,
+    "candidates_evaluated": 72,
+    "beat_all_baselines": 15,
+    "beating_stocks": [
+      "NVDA"
+    ],
+    "volatility_feature_comparisons_improved": 9,
+    "volatility_feature_comparisons_total": 36,
+    "rolling500_comparisons_improved": 5,
+    "rolling500_comparisons_total": 24,
+    "rolling750_comparisons_improved": 10,
+    "rolling750_comparisons_total": 24,
+    "historical_uncertainty_coverage": null,
+    "stock_comparisons": [
+      {
+        "symbol": "AAPL",
+        "best_baseline_mae_percent": 3.11896,
+        "alpha100_mae_percent": 3.26275,
+        "alpha1000_mae_percent": 3.17169,
+        "alpha1000_balanced_directional_accuracy_percent": 52.326,
+        "alpha1000_negative_specificity_percent": 60.083
+      },
+      {
+        "symbol": "ABF.L",
+        "best_baseline_mae_percent": 2.53573,
+        "alpha100_mae_percent": 2.71555,
+        "alpha1000_mae_percent": 2.57334,
+        "alpha1000_balanced_directional_accuracy_percent": 52.801,
+        "alpha1000_negative_specificity_percent": 19.502
+      },
+      {
+        "symbol": "MSFT",
+        "best_baseline_mae_percent": 2.98692,
+        "alpha100_mae_percent": 3.0582,
+        "alpha1000_mae_percent": 3.00953,
+        "alpha1000_balanced_directional_accuracy_percent": 48.081,
+        "alpha1000_negative_specificity_percent": 36.889
+      },
+      {
+        "symbol": "NVDA",
+        "best_baseline_mae_percent": 4.44915,
+        "alpha100_mae_percent": 4.41811,
+        "alpha1000_mae_percent": 4.39695,
+        "alpha1000_balanced_directional_accuracy_percent": 52.939,
+        "alpha1000_negative_specificity_percent": 14.48
+      }
+    ],
+    "note": "15 wins are correlated configurations on NVDA, not 15 independent results. These four stocks and dates were inspected during iterative research. No prospective or untouched holdout evidence; no live model promotion."
+  }
 }
