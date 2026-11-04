@@ -47,6 +47,8 @@ def _fundamental_features(stock, *, as_of):
             period_end__lte=as_of,
             created_at__isnull=False,
             created_at__date__lte=as_of,
+            updated_at__isnull=False,
+            updated_at__date__lte=as_of,
         )
         .order_by(F("period_end").desc(nulls_last=True), "-pk")
         .first()
