@@ -50,10 +50,11 @@ python manage.py replay_recommendation_rankings \
   --output ../marketpulse_model_evaluation/ranking_replay_research.json
 ```
 
-**Note:** The manifest shown lives in the separate PR #8 branch and is not
-automatically included in this PR. Either provide the existing original
-local file via `--cohort-file`, or incorporate PR #8's exact manifest
-after reviewing it. The command never guesses missing symbols.
+**Provenance:** The exact recovered original 33-stock cohort from PR #8
+is included in this research branch at
+`market_data/research_cohorts/raw_adjusted_33_stock_v1.json`, with its
+original ordering preserved. The command verifies the manifest SHA-256 in its
+output. It never guesses missing symbols.
 Do not run it on `ai_stock_market`, and never overwrite research results.
 
 ### 3. Interpretation and known limits
