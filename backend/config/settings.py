@@ -337,7 +337,13 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         # Maximum five verification attempts per hour.
         "auth_verification": "5/hour",
-        "auth_login": "10/hour",
+        # Disposable Playwright CI uses one IP across many independent tests.
+        # Keep the real 10/hour security ceiling unchanged everywhere else.
+        "auth_login": (
+            "100/hour"
+            if DEBUG and os.environ.get("DB_NAME") == "marketpulse_e2e_ci"
+            else "10/hour"
+        ),
 
         # Maximum five password-reset requests per hour.
         "auth_password_reset": "5/hour",
