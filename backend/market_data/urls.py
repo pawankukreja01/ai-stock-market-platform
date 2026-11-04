@@ -4,6 +4,7 @@ from .investment_simulator_views import InvestmentSimulatorView
 from .quote_views import LatestQuoteView
 from .research_readiness_views import ResearchReadinessView
 from .market_data_coverage_views import MarketDataCoverageView
+from .ranking_evidence_views import RankingEvidenceView
 from .prospective_views import ProspectiveCaptureView, ProspectiveResultsView
 
 from .views import (
@@ -27,6 +28,7 @@ from .sentiment_views import StockSentimentSummaryView
 from .recommendation_views import StockRecommendationsView
 
 urlpatterns = [
+    path("ranking-evidence/", RankingEvidenceView.as_view(), name="ranking-evidence"),
     path("market-data-coverage/", MarketDataCoverageView.as_view(), name="market-data-coverage"),
     path("prospective-forecasts/capture/", ProspectiveCaptureView.as_view(), name="prospective-capture"),
     path("prospective-forecasts/results/", ProspectiveResultsView.as_view(), name="prospective-results"),
