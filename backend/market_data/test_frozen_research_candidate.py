@@ -12,7 +12,7 @@ from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
 from market_data.frozen_research_candidate import (
-    FROZEN_SPEC, evaluate_frozen_candidate, load_frozen_spec,
+    FROZEN_SPEC, PRICE_VOLUME_FEATURE_COLUMNS, validate_frozen_feature_schema,\n    evaluate_frozen_candidate, load_frozen_spec,
 )
 from market_data.management.commands.experiment_forecast_pipeline import load_locked_cohort
 from market_data.management.commands.validate_frozen_forecast_candidate import summarize_horizon
@@ -48,11 +48,41 @@ class FrozenCandidateProtocolTests(SimpleTestCase):
         with self.assertRaisesRegex(ValueError, "price/volume-only"):
             evaluate_frozen_candidate(X.assign(relative_return_5d=0), y, horizon=5)
 
+    def test_accepts_exact_original_18_feature_columns(self):
+        self.assertEqual(len(PRICE_VOLUME_FEATURE_COLUMNS), 18)
+        self.assertIn("relative_volume_20d", PRICE_VOLUME_FEATURE_COLUMNS)
+        X = pd.DataFrame(columns=list(PRICE_VOLUME_FEATURE_COLUMNS))
+        self.assertIsNone(validate_frozen_feature_schema(X))
+
+    def test_rejects_market_relative_returns_but_not_relative_volume(self):
+        X = pd.DataFrame(columns=list(PRICE_VOLUME_FEATURE_COLUMNS))
+        with self.assertRaisesRegex(ValueError, "relative_return_5d"):
+            validate_frozen_feature_schema(
+                X.assign(relative_return_5d=0.0)
+            )
+        with self.assertRaisesRegex(ValueError, "order_mismatch=True"):
+            validate_frozen_feature_schema(X[list(reversed(X.columns))])
+
+    def test_frozen_model_with_full_raw_volume_feature_schema(self):
+        dates = pd.bdate_range("2022-01-03", periods=940)
+        timeline = np.arange(len(dates), dtype=float)
+        data = {
+            key: 0.01 * np.sin(timeline / 15.0 + i / 8.0)
+            for i, key in enumerate(PRICE_VOLUME_FEATURE_COLUMNS)
+        }
+        X = pd.DataFrame(data, index=dates)
+        y = pd.Series(0.005 * np.cos(timeline / 17.0), index=dates)
+        result = evaluate_frozen_candidate(X, y, horizon=5)
+        self.assertEqual(result["status"], "evaluated")
+        self.assertEqual(result["out_of_sample_observations"], 400)
+
     def test_frozen_pipeline_uses_unchanged_purged_folds(self):
         dates = pd.bdate_range("2022-01-03", periods=940)
         t = np.arange(len(dates), dtype=float)
-        X = pd.DataFrame({"return_5d": .01 * np.sin(t / 10),
-                          "volatility_20d": .2 + .01 * np.cos(t / 29)}, index=dates)
+        X = pd.DataFrame({
+            name: .01 * np.sin(t / 10 + i / 12)
+            for i, name in enumerate(PRICE_VOLUME_FEATURE_COLUMNS)
+        }, index=dates)
         y = pd.Series(.005 * np.cos(t / 17), index=dates)
         result = evaluate_frozen_candidate(X, y, horizon=5)
         self.assertEqual(result["status"], "evaluated")
