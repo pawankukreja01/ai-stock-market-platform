@@ -163,9 +163,19 @@
           <span class="pill">{{ data.risk_tolerance }} risk profile</span>
         </div>
 
-        <div v-if="!data.results?.length" class="empty-state">
-          No recommendations were returned for these parameters.
-          Try another market or candidate count.
+        <div v-if="!data.results?.length" class="empty-state" role="status">
+          <strong>No research ranking is available for these parameters.</strong>
+          <p v-if="data.data_coverage?.reason">{{ data.data_coverage.reason }}</p>
+          <p v-if="data.data_coverage?.latest_stored_date">
+            Latest stored observation for this market:
+            <strong>{{ data.data_coverage.latest_stored_date }}</strong>
+            ({{ data.data_coverage.stored_price_rows.toLocaleString() }} historical rows).
+          </p>
+          <p v-else-if="data.data_coverage">
+            This isolated preview has no stored historical price data for this market.
+            The catalogue alone is insufficient to calculate rankings.
+          </p>
+          <p>No placeholder investment recommendations are generated when required data is missing.</p>
         </div>
 
         <div v-else class="table-wrapper">
