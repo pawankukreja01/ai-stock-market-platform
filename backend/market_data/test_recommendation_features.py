@@ -69,6 +69,21 @@ class RecommendationFeatureTests(TestCase):
         self.assertFalse(result["data_quality"]["fundamental_data_available"])
         self.assertEqual(result["data_quality"]["evidence_cutoff_date"], as_of.isoformat())
 
+    def test_revised_fundamentals_are_excluded_from_past_cutoffs(self):
+        self.add_prices(count=100)
+        statement = Fundamental.objects.create(
+            stock=self.stock, period_type="annual",
+            period_end=date.today() - timedelta(days=60),
+            roe=Decimal("0.6"),
+        )
+        # An update made after the signal date cannot be retroactively
+        # displayed in that historical ranking.
+        Fundamental.objects.filter(pk=statement.pk).update(
+            updated_at=timezone.now() + timedelta(days=1)
+        )
+        result = extract_candidate_features(self.stock, as_of=date.today())
+        self.assertFalse(result["data_quality"]["fundamental_data_available"])
+
     def test_sentiment_rejects_future_analysis_and_post_cutoff_ingestion(self):
         self.add_prices(count=100)
         as_of = date.today()
