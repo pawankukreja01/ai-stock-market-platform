@@ -1,0 +1,71 @@
+{
+  "kind": "historical_ranking_replay_snapshot",
+  "source_report": "ranking_replay_research.json",
+  "source_sha256": "1fba17df2f706cc9f26ddd9b7f73496b97fb0ecfec169c6953367cd9a48b853f",
+  "source_cohort_sha256": "8ceac6b8b1d1ada47a719f97ab29c398696d1b28211c27523e7d963d4739e345",
+  "period_start": "2024-01-01",
+  "period_end": "2026-04-01",
+  "research_role": "development_diagnostic_not_independent_holdout",
+  "ranking_method": "Provisional research component scoring; machine-learning forecasts not included",
+  "comparison": "Top-five equal-weight shortlisted stocks vs all 33 equal-weight eligible ranked stocks",
+  "target": "Next observed close entry through 20-session exit; local-currency, unadjusted close-price return",
+  "summary": {
+    "requested_periods": 28,
+    "evaluated_periods": 26,
+    "excluded_periods": 2,
+    "wins": 13,
+    "losses": 13,
+    "baseline_relative_win_rate": 0.5,
+    "mean_excess_return_percentage_points": 0.3894055,
+    "median_excess_return_percentage_points": -0.029559,
+    "mean_top_five_net_return_percentage_points": 1.26377578,
+    "mean_equal_weight_net_return_percentage_points": 0.87437028,
+    "best_period_excess_return_percentage_points": 6.8543595,
+    "worst_period_excess_return_percentage_points": -4.7945724,
+    "win_probability_calibrated": null,
+    "prediction_accuracy": null,
+    "historical_uncertainty_coverage": null
+  },
+  "by_year": [
+    {
+      "year": 2024,
+      "evaluated_periods": 11,
+      "wins": 8,
+      "average_excess_return_percentage_points": 2.0065899
+    },
+    {
+      "year": 2025,
+      "evaluated_periods": 12,
+      "wins": 5,
+      "average_excess_return_percentage_points": -0.468279375
+    },
+    {
+      "year": 2026,
+      "evaluated_periods": 3,
+      "wins": 0,
+      "average_excess_return_percentage_points": -2.109531033
+    }
+  ],
+  "excluded_signal_dates": [
+    "2024-04-30",
+    "2024-09-27"
+  ],
+  "assumed_transaction_costs": {
+    "basis_points_per_side": 10,
+    "both_arms_charged_equally": true,
+    "note": "Same assumed fixed round-trip cost is deducted from each arm; it cancels in the measured excess-return differential. Portfolio-specific turnover, spread, slippage, tax and FX costs are not modeled."
+  },
+  "limitations": [
+    "Historical model-development diagnostics, not untouched prospective tests or proof of investment skill.",
+    "Today's fixed active 33-stock list introduces survivorship and historical-universe selection bias.",
+    "Backfilled filings/news without evidence of pre-cutoff availability are excluded; this is not a verified original-filing-date source.",
+    "No stock split/dividend total-return consistency, currency conversions, transaction-level execution, liquidity, spread, slippage, taxes or portfolio turnover has been established.",
+    "A cross-market 20-session horizon can refer to different calendar dates on US and UK exchanges.",
+    "Twenty-session outcomes sampled every 30 calendar days may be dependent; no statistically valid performance-confidence interval is claimed.",
+    "Results are from an equal-weight top-five diagnostic, not the application's diversified whole-share portfolio allocation.",
+    "The report does not measure current investment suitability or the likelihood that today's top-ranked stock will appreciate."
+  ],
+  "status": "insufficient_evidence_for_profitable_stock_selection",
+  "approved_for_live_model_promotion": false,
+  "approved_to_claim_recommendation_accuracy": false
+}
