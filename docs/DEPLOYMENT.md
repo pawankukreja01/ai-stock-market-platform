@@ -4,6 +4,37 @@
 production deployment. A public launch needs separate infrastructure,
 authorization, credentials, backups, observability, and acceptance.
 
+## Fast build and troubleshooting
+
+The default local-preview image installs the web application's research/ML,
+portfolio, alert, charts, SHAP and XGBoost dependencies, **but not** the optional
+CPU PyTorch + Transformers packages used only by the `analyze_news_sentiment`
+management command. Stored sentiment summaries still work. To enable new
+FinBERT article processing inside preview, add `PREVIEW_WITH_FINBERT=true`
+to your ignored `preview.env` and rebuild. That option downloads
+significantly larger packages and may need more disk and memory.
+
+The backend `.dockerignore` excludes large local research snapshots, model
+weights, ZIP archives, and dataset exports that do not belong in a build.
+No user's original database, local stock-history archive or research dump is
+removed or rewritten.
+
+If Compose warns `The "<name>" variable is not set`, check the ignored
+`preview.env`: a secret containing a dollar sign can be mistaken for a
+Compose variable. Single-quote the **whole value** to preserve literal dollars
+(e.g. `PREVIEW_DB_PASSWORD='value-with-$literal'`). Do not print or paste
+the actual secrets into a chat or GitHub issue. Use
+`docker compose --env-file preview.env -f compose.preview.yml config --quiet`
+to validate syntax without displaying secrets.
+
+A Docker BuildKit `EOF` while downloading a large wheel is usually a
+disconnected/restarted engine, failed build service or resource/network
+interruption, **not** evidence of corrupt Django code. Confirm
+`docker info`, available memory/disk in Docker Desktop, then re-run the
+build once Docker is healthy. Docker caching may reuse completed layers.
+Do not use `docker compose down -v`, `docker volume prune` or
+factory reset while preserving preview databases.
+
 ## Isolated Docker preview
 
 The `compose.preview.yml` stack creates a dedicated **new** PostgreSQL

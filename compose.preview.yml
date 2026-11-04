@@ -16,7 +16,10 @@ services:
       retries: 10
     networks: [preview_private]
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        WITH_FINBERT: ${PREVIEW_WITH_FINBERT:-false}
     restart: unless-stopped
     environment:
       # This isolated localhost-only preview terminates HTTP, not HTTPS.
